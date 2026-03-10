@@ -1,5 +1,11 @@
 # IDV 3D graphics customization
 
+This project is a plugin for [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf) to support 3D graphics. Scenes can be edited with Blender. Read below for instructions.
+
+**!! This project is new and only tested on my own PC and full of bugs, feel free to give feedback (discord: dostojefsky)**
+
+![showcase](showcase.gif)
+
 ## Setup
 
 1. Install [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf/releases/tag/v2.1.0-beta%2B1e61260)
