@@ -32,7 +32,7 @@ const DEFAULT_POSITIONS = {
 // ============================================
 // DEV MODE
 // ============================================
-const DEV = true;
+const DEV = false;
 
 const AVAILABLE_HUNTERS = [
     { name: "Hell Ember", folder: "Hell_Ember" },
