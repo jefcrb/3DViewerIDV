@@ -24,12 +24,12 @@
 
 The `template.blend` file contains:
 
-- **5 Dummy Models** (red hunter cube, 4 blue survivor cubes)
-  - `HUNTER` - Back center position
-  - `SURVIVOR_1` - Front left
-  - `SURVIVOR_2` - Front center-left
-  - `SURVIVOR_3` - Front center-right
-  - `SURVIVOR_4` - Front right
+- **5 Dummy Models**
+  - `_HUNTER` - Back center position
+  - `_SURVIVOR_1` - Front left
+  - `_SURVIVOR_2` - Front center-left
+  - `_SURVIVOR_3` - Front center-right
+  - `_SURVIVOR_4` - Front right
 
 ## Exporting Your Scene
 
