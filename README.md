@@ -1,5 +1,7 @@
 # IDV 3D graphics customization
 
+**!! This project is new and only tested on my own PC and full of bugs, feel free to give feedback (discord: dostojefsky)**
+
 ![showcase](showcase.gif)
 
 ## Setup
