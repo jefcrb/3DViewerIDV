@@ -1,4 +1,16 @@
-# Blender Workflow Guide
+# IDV 3D graphics customization
+
+## Setup
+
+1. Install [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf/releases/tag/v2.1.0-beta%2B1e61260)
+2. Clone this repository (or download as zip):
+   ```
+   git clone git@github.com:jefcrb/3DViewerIDV.git
+   ```
+3. Move project to `%APPDATA%\neo-bpsys-wpf\Plugins`:
+   ```
+   mv 3DViewerIDV %APPDATA%\neo-bpsys-wpf\Plugins
+   ```
 
 ## Quick Start
 
