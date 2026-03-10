@@ -1,5 +1,7 @@
 # IDV 3D graphics customization
 
+![showcase](showcase.gif)
+
 ## Setup
 
 1. Install [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf/releases/tag/v2.1.0-beta%2B1e61260)
