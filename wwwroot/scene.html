@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Character Viewer</title>
+    <link rel="stylesheet" href="scene.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+    </script>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <div id="info">
+        <h2 id="hunterName">Loading...</h2>
+        <p id="status">Initializing 3D viewer...</p>
+    </div>
+    <div id="error">
+        <h2>Model not found</h2>
+        <p id="errorMessage"></p>
+    </div>
+    <div id="devPanel">
+        <h3>DEV CONTROLS</h3>
+
+        <div class="dropdown-group">
+            <label>Hunter</label>
+            <select id="hunterSelect">
+                <option value="">None</option>
+            </select>
+        </div>
+
+        <div class="dropdown-group">
+            <label>Survivor 1</label>
+            <select id="survivor1Select">
+                <option value="">None</option>
+            </select>
+        </div>
+
+        <div class="dropdown-group">
+            <label>Survivor 2</label>
+            <select id="survivor2Select">
+                <option value="">None</option>
+            </select>
+        </div>
+
+        <div class="dropdown-group">
+            <label>Survivor 3</label>
+            <select id="survivor3Select">
+                <option value="">None</option>
+            </select>
+        </div>
+
+        <div class="dropdown-group">
+            <label>Survivor 4</label>
+            <select id="survivor4Select">
+                <option value="">None</option>
+            </select>
+        </div>
+
+        <button onclick="applyDevSelection()">Apply Changes</button>
+    </div>
+
+    <script type="module" src="scene.js"></script>
+</body>
+</html>
