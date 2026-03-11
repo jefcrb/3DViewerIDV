@@ -1,4 +1,3 @@
-// Three.js-based 3D Character Viewer
 // Loads Blender-exported GLB scenes and replaces dummy models with character GLTFs
 
 import * as THREE from 'three';
@@ -26,7 +25,7 @@ const DEFAULT_POSITIONS = {
 };
 
 // Dev mode
-const DEV = false;
+const DEV = true;
 
 const AVAILABLE_HUNTERS = [
     { name: "Hell Ember", folder: "Hell_Ember" },
@@ -53,7 +52,8 @@ const AVAILABLE_SURVIVORS = [
     { name: "Priestess", folder: "Priestess" },
     { name: "Perfumer", folder: "Perfumer" },
     { name: "Seer", folder: "Seer" },
-    { name: "Magician", folder: "Magician" }
+    { name: "Magician", folder: "Magician" },
+    { name: "Little Girl", folder: "Little_Girl"},
 ];
 
 const DEV_DATA = {
@@ -65,7 +65,7 @@ const DEV_DATA = {
     },
     survivors: [
         { name: "Doctor", hasModel: true, modelPath: "./survivors/Doctor/", modelFile: "Doctor.gltf" },
-        { name: "Lawyer", hasModel: true, modelPath: "./survivors/Lawyer/", modelFile: "Lawyer.gltf" },
+        { name: "Night Watch", hasModel: true, modelPath: "./hunters/Night_Watch/", modelFile: "Night_Watch.gltf" },
         { name: "Thief", hasModel: true, modelPath: "./survivors/Thief/", modelFile: "Thief.gltf" },
         { name: "Gardener", hasModel: true, modelPath: "./survivors/Gardener/", modelFile: "Gardener.gltf" }
     ]
@@ -281,6 +281,7 @@ function createMinimalFallbackScene() {
 async function initializeScene() {
     try {
         await loadBlenderScene();
+        await loadCustomScales();
         console.log('Scene initialization complete');
     } catch (error) {
         console.error('Blender scene loading failed:', error);
@@ -297,6 +298,28 @@ let loadedCharacters = {
     survivors: [null, null, null, null]
 };
 const clock = new THREE.Clock();
+
+let customScales = null;
+
+async function loadCustomScales() {
+    if (customScales) return customScales;
+
+    try {
+        const response = await fetch('./custom_scales.json');
+        if (!response.ok) {
+            console.warn('custom_scales.json not found, using default scales');
+            customScales = {};
+            return customScales;
+        }
+        customScales = await response.json();
+        console.log('Loaded custom scales:', customScales);
+        return customScales;
+    } catch (error) {
+        console.warn('Failed to load custom_scales.json:', error);
+        customScales = {};
+        return customScales;
+    }
+}
 
 window.loadCharactersJson = function(jsonData) {
     console.log('Received character data from backend:', jsonData);
@@ -393,7 +416,14 @@ function loadCharacterModel(url, name, position, type, index) {
             if (height > 0) {
                 const scale = TARGET_HEIGHT / height;
                 model.scale.setScalar(scale);
-                console.log(`Normalized ${name}: height=${height.toFixed(2)}, scale=${scale.toFixed(2)}`);
+
+                if (customScales && customScales[name]) {
+                    const finalScale = scale * customScales[name];
+                    model.scale.setScalar(finalScale);
+                    console.log(`Normalized ${name}: height=${height.toFixed(2)}, base=${scale.toFixed(2)}, multiplier=${customScales[name]}, final=${finalScale.toFixed(2)}`);
+                } else {
+                    console.log(`Normalized ${name}: height=${height.toFixed(2)}, scale=${scale.toFixed(2)}`);
+                }
             }
 
             model.position.copy(position);
