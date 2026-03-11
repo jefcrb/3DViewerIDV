@@ -104,7 +104,7 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
 if (!DEV) {
-    // controls.enabled = false;
+    controls.enabled = false;
 }
 
 // Dummy model management
