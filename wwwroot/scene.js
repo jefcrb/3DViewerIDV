@@ -5,20 +5,16 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// ============================================
-// SCENE CONFIGURATION
-// ============================================
+// Configuration
 const SCENE_CONFIG = {
-    sceneUrl: './assets/scene.glb', // Path to Blender-exported GLB file
+    sceneUrl: './assets/scene.glb',
     dummyNames: {
         hunter: '_HUNTER',
         survivors: ['_SURVIVOR_1', '_SURVIVOR_2', '_SURVIVOR_3', '_SURVIVOR_4']
     },
-    // Light intensity adjustment (Blender exports can be too bright in Three.js)
-    lightIntensityMultiplier: 0.05, // Reduce imported light intensity (0.5 = 50%)
+    lightIntensityMultiplier: 0.05
 };
 
-// Default positions (used as fallback if dummies not found)
 const DEFAULT_POSITIONS = {
     hunter: new THREE.Vector3(0, 0, 4),
     survivors: [
@@ -29,9 +25,7 @@ const DEFAULT_POSITIONS = {
     ]
 };
 
-// ============================================
-// DEV MODE
-// ============================================
+// Dev mode
 const DEV = false;
 
 const AVAILABLE_HUNTERS = [
@@ -79,17 +73,14 @@ const DEV_DATA = {
 
 const TARGET_HEIGHT = 2.5;
 
-// ============================================
-// SCENE SETUP
-// ============================================
+// Scene setup
 const canvas = document.getElementById('renderCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadow edges
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-// Tone mapping for more accurate lighting
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
@@ -112,14 +103,11 @@ controls.maxDistance = 20;
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
-
 if (!DEV) {
     // controls.enabled = false;
 }
 
-// ============================================
-// DUMMY MODEL MANAGEMENT
-// ============================================
+// Dummy model management
 let dummyModels = {
     hunter: null,
     survivors: []
@@ -130,11 +118,18 @@ let characterPositions = {
     survivors: []
 };
 
-let sceneLoadedFromBlender = false;
+let sceneLoaded = false;
+
+function configureLightShadow(light, mapSize = 1024) {
+    light.castShadow = true;
+    light.shadow.mapSize.width = mapSize;
+    light.shadow.mapSize.height = mapSize;
+    light.shadow.bias = -0.0001;
+    light.shadow.normalBias = 0.02;
+    light.shadow.radius = 2;
+}
 
 function findDummyModels(loadedScene) {
-    console.log('Searching for dummy models...');
-
     const hunter = loadedScene.getObjectByName(SCENE_CONFIG.dummyNames.hunter);
     const survivors = SCENE_CONFIG.dummyNames.survivors.map(name =>
         loadedScene.getObjectByName(name)
@@ -152,8 +147,6 @@ function findDummyModels(loadedScene) {
 }
 
 function getPositionsFromDummies(dummies) {
-    console.log('Extracting positions from dummy models...');
-
     const positions = {
         hunter: dummies.hunter ?
             dummies.hunter.getWorldPosition(new THREE.Vector3()) :
@@ -164,19 +157,15 @@ function getPositionsFromDummies(dummies) {
     for (let i = 0; i < 4; i++) {
         if (dummies.survivors[i]) {
             positions.survivors.push(dummies.survivors[i].getWorldPosition(new THREE.Vector3()));
-            console.log(`Survivor ${i + 1} position extracted`);
         } else {
             positions.survivors.push(DEFAULT_POSITIONS.survivors[i].clone());
-            console.log(`Survivor ${i + 1} using default position`);
         }
     }
 
-    console.log(`Hunter position extracted`);
     return positions;
 }
 
 function hideDummyModels(dummies) {
-    console.log('Hiding dummy models...');
     if (dummies.hunter) {
         dummies.hunter.visible = false;
     }
@@ -185,9 +174,7 @@ function hideDummyModels(dummies) {
     });
 }
 
-// ============================================
-// BLENDER SCENE LOADING
-// ============================================
+// Blender scene loading
 function loadBlenderScene() {
     return new Promise((resolve, reject) => {
         console.log(`Loading Blender scene from: ${SCENE_CONFIG.sceneUrl}`);
@@ -200,66 +187,35 @@ function loadBlenderScene() {
 
                 scene.add(gltf.scene);
 
-                // Process scene objects
                 let lightCount = 0;
                 gltf.scene.traverse((child) => {
-                    // Enable shadows on meshes
                     if (child.isMesh) {
                         child.castShadow = true;
                         child.receiveShadow = true;
                     }
 
-                    // Configure lights
                     if (child.isLight) {
                         lightCount++;
 
-                        // Apply intensity multiplier to all lights
                         const originalIntensity = child.intensity;
                         child.intensity *= SCENE_CONFIG.lightIntensityMultiplier;
 
-                        // DirectionalLight - typically used for sun
                         if (child.isDirectionalLight) {
-                            child.castShadow = true;
-                            child.shadow.mapSize.width = 2048;
-                            child.shadow.mapSize.height = 2048;
+                            configureLightShadow(child, 2048);
                             child.shadow.camera.near = 0.5;
                             child.shadow.camera.far = 50;
                             child.shadow.camera.left = -20;
                             child.shadow.camera.right = 20;
                             child.shadow.camera.top = 20;
                             child.shadow.camera.bottom = -20;
-
-                            // Soften shadows
-                            child.shadow.bias = -0.0001; // Reduce shadow acne
-                            child.shadow.normalBias = 0.02; // Reduce artifacts on curved surfaces
-                            child.shadow.radius = 2; // Soft shadow edges (only works with VSMShadowMap)
-
                             console.log(`  Configured DirectionalLight: ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
-                        }
-                        // PointLight
-                        else if (child.isPointLight) {
-                            child.castShadow = true;
-                            child.shadow.mapSize.width = 1024;
-                            child.shadow.mapSize.height = 1024;
-                            child.shadow.bias = -0.0001;
-                            child.shadow.normalBias = 0.02;
-                            child.shadow.radius = 2;
-
+                        } else if (child.isPointLight) {
+                            configureLightShadow(child);
                             console.log(`  Configured PointLight: ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
-                        }
-                        // SpotLight
-                        else if (child.isSpotLight) {
-                            child.castShadow = true;
-                            child.shadow.mapSize.width = 1024;
-                            child.shadow.mapSize.height = 1024;
-                            child.shadow.bias = -0.0001;
-                            child.shadow.normalBias = 0.02;
-                            child.shadow.radius = 2;
-
+                        } else if (child.isSpotLight) {
+                            configureLightShadow(child);
                             console.log(`  Configured SpotLight: ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
-                        }
-                        // Other light types
-                        else {
+                        } else {
                             console.log(`  Found light: ${child.type}, ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
                         }
                     }
@@ -272,7 +228,6 @@ function loadBlenderScene() {
                     console.log(`Found and configured ${lightCount} light(s) from Blender`);
                 }
 
-                // Use camera from Blender if available
                 if (gltf.cameras && gltf.cameras.length > 0) {
                     const blenderCamera = gltf.cameras[0];
                     camera.position.copy(blenderCamera.position);
@@ -280,14 +235,11 @@ function loadBlenderScene() {
                     console.log('Using camera from Blender scene');
                 }
 
-                // Find dummies
                 dummyModels = findDummyModels(gltf.scene);
                 characterPositions = getPositionsFromDummies(dummyModels);
-
-                // Hide dummies immediately (they'll stay hidden until characters are loaded)
                 hideDummyModels(dummyModels);
 
-                sceneLoadedFromBlender = true;
+                sceneLoaded = true;
                 resolve();
             },
             (progress) => {
@@ -302,13 +254,10 @@ function loadBlenderScene() {
     });
 }
 
-// ============================================
-// MINIMAL FALLBACK SCENE
-// ============================================
+// Minimal fallback scene
 function createMinimalFallbackScene() {
     console.log('Creating minimal fallback scene (no lighting)...');
 
-    // Just add a ground plane for reference
     const groundGeometry = new THREE.PlaneGeometry(20, 20);
     const groundMaterial = new THREE.MeshStandardMaterial({
         color: 0x333333,
@@ -320,7 +269,6 @@ function createMinimalFallbackScene() {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Set default positions
     characterPositions = {
         hunter: DEFAULT_POSITIONS.hunter.clone(),
         survivors: DEFAULT_POSITIONS.survivors.map(p => p.clone())
@@ -329,9 +277,7 @@ function createMinimalFallbackScene() {
     console.log('Minimal fallback scene created (models will appear dark without lights)');
 }
 
-// ============================================
-// SCENE INITIALIZATION
-// ============================================
+// Scene initialization
 async function initializeScene() {
     try {
         await loadBlenderScene();
@@ -341,14 +287,11 @@ async function initializeScene() {
         console.error('Error details:', error.message);
         console.warn('Creating fallback scene. Please add scene.glb to assets/ folder.');
 
-        // Create minimal fallback so the application doesn't crash
         createMinimalFallbackScene();
     }
 }
 
-// ============================================
-// CHARACTER LOADING
-// ============================================
+// Character loading
 let loadedCharacters = {
     hunter: null,
     survivors: [null, null, null, null]
@@ -358,25 +301,21 @@ const clock = new THREE.Clock();
 window.loadCharactersJson = function(jsonData) {
     console.log('Received character data from backend:', jsonData);
 
-    // Hide dummies if using Blender scene
-    if (sceneLoadedFromBlender) {
+    if (sceneLoaded) {
         hideDummyModels(dummyModels);
     }
 
-    // Hunter
     const hunterUrl = (jsonData.hunter && jsonData.hunter.hasModel)
         ? jsonData.hunter.modelPath + jsonData.hunter.modelFile
         : null;
 
     if (hunterUrl !== (loadedCharacters.hunter?.url || null)) {
-        // Remove old hunter
         if (loadedCharacters.hunter) {
             scene.remove(loadedCharacters.hunter.model);
             loadedCharacters.hunter = null;
             console.log('Removed old hunter');
         }
 
-        // Load new hunter
         if (hunterUrl) {
             loadCharacterModel(
                 hunterUrl,
@@ -390,7 +329,6 @@ window.loadCharactersJson = function(jsonData) {
         console.log(`Hunter unchanged: ${jsonData.hunter.name}`);
     }
 
-    // Handle survivors
     if (jsonData.survivors && Array.isArray(jsonData.survivors)) {
         jsonData.survivors.forEach((survivor, index) => {
             if (index >= 4) return;
@@ -400,14 +338,12 @@ window.loadCharactersJson = function(jsonData) {
                 : null;
 
             if (survivorUrl !== (loadedCharacters.survivors[index]?.url || null)) {
-                // Remove old survivor if exists
                 if (loadedCharacters.survivors[index]) {
                     scene.remove(loadedCharacters.survivors[index].model);
                     loadedCharacters.survivors[index] = null;
                     console.log(`Removed old survivor at position ${index}`);
                 }
 
-                // Load new survivor if specified
                 if (survivorUrl) {
                     loadCharacterModel(
                         survivorUrl,
@@ -423,7 +359,6 @@ window.loadCharactersJson = function(jsonData) {
         });
     }
 
-    // Remove survivors that are no longer in the data
     for (let i = (jsonData.survivors?.length || 0); i < 4; i++) {
         if (loadedCharacters.survivors[i]) {
             scene.remove(loadedCharacters.survivors[i].model);
@@ -496,8 +431,6 @@ function loadCharacterModel(url, name, position, type, index) {
             } else if (type === 'survivor' && index >= 0 && index < 4) {
                 loadedCharacters.survivors[index] = characterData;
             }
-
-            console.log(`Stored ${type} ${name} in tracking system`);
         },
         undefined,
         (error) => {
@@ -506,9 +439,7 @@ function loadCharacterModel(url, name, position, type, index) {
     );
 }
 
-// ============================================
-// DEV MODE FUNCTIONS
-// ============================================
+// Dev mode functions
 function populateDevDropdowns() {
     const hunterSelect = document.getElementById('hunterSelect');
     const survivor1Select = document.getElementById('survivor1Select');
@@ -577,16 +508,12 @@ window.applyDevSelection = function() {
     window.loadCharactersJson(gameData);
 };
 
-
-// ============================================
-// ANIMATION LOOP
-// ============================================
+// Animation loop
 function animate() {
     requestAnimationFrame(animate);
 
     const delta = clock.getDelta();
 
-    // Update all animation mixers
     if (loadedCharacters.hunter?.mixer) {
         loadedCharacters.hunter.mixer.update(delta);
     }
@@ -596,7 +523,6 @@ function animate() {
         }
     });
 
-    // Only update controls if enabled (DEV mode)
     if (controls.enabled) {
         controls.update();
     }
@@ -604,34 +530,26 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// ============================================
-// WINDOW RESIZE
-// ============================================
+// Window resize
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ============================================
-// INITIALIZATION
-// ============================================
-// Initialize and start
+// Initialization
 (async function() {
     try {
         await initializeScene();
         console.log('Scene ready');
     } catch (error) {
-        // This should not happen since initializeScene handles errors internally
         console.error('Fatal initialization error:', error);
         document.getElementById('error').style.display = 'block';
         document.getElementById('errorMessage').textContent = `Fatal error: ${error.message}`;
     }
 
-    // Always start animation loop (even if scene failed to load)
     animate();
 
-    // DEV MODE setup
     if (DEV) {
         console.log('DEV MODE: Enabled');
         document.getElementById('devPanel').style.display = 'block';
