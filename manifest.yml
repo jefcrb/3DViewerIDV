@@ -1,4 +1,4 @@
-id: "com.example.3DViewerIDV"
+id: "3DViewerIDV"
 name: "3DViewerIDV"
 description: "3D characters and scene support"
 entranceAssembly: "neo-bpsys-wpf.3DViewerIDV.dll"

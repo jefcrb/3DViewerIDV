@@ -112,9 +112,9 @@ controls.maxDistance = 20;
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
-// Lock camera when not in DEV mode
+
 if (!DEV) {
-    controls.enabled = false;
+    // controls.enabled = false;
 }
 
 // ============================================
@@ -349,55 +349,93 @@ async function initializeScene() {
 // ============================================
 // CHARACTER LOADING
 // ============================================
-let loadedModels = [];
-let animationMixers = [];
+let loadedCharacters = {
+    hunter: null,
+    survivors: [null, null, null, null]
+};
 const clock = new THREE.Clock();
 
-// Main function for loading characters (supports both old and new C# API)
 window.loadCharactersJson = function(jsonData) {
-    console.log('Received character data from C#:', jsonData);
-
-    // Clear previous models and mixers
-    loadedModels.forEach(model => {
-        if (model.parent) model.parent.remove(model);
-    });
-    loadedModels = [];
-    animationMixers = [];
+    console.log('Received character data from backend:', jsonData);
 
     // Hide dummies if using Blender scene
     if (sceneLoadedFromBlender) {
         hideDummyModels(dummyModels);
     }
 
-    // Load hunter
-    if (jsonData.hunter && jsonData.hunter.hasModel) {
-        loadCharacterModel(
-            jsonData.hunter.modelPath + jsonData.hunter.modelFile,
-            jsonData.hunter.name,
-            characterPositions.hunter,
-            'Hunter'
-        );
+    // Hunter
+    const hunterUrl = (jsonData.hunter && jsonData.hunter.hasModel)
+        ? jsonData.hunter.modelPath + jsonData.hunter.modelFile
+        : null;
+
+    if (hunterUrl !== (loadedCharacters.hunter?.url || null)) {
+        // Remove old hunter
+        if (loadedCharacters.hunter) {
+            scene.remove(loadedCharacters.hunter.model);
+            loadedCharacters.hunter = null;
+            console.log('Removed old hunter');
+        }
+
+        // Load new hunter
+        if (hunterUrl) {
+            loadCharacterModel(
+                hunterUrl,
+                jsonData.hunter.name,
+                characterPositions.hunter,
+                'hunter',
+                -1
+            );
+        }
+    } else if (hunterUrl) {
+        console.log(`Hunter unchanged: ${jsonData.hunter.name}`);
     }
 
-    // Load survivors
+    // Handle survivors
     if (jsonData.survivors && Array.isArray(jsonData.survivors)) {
         jsonData.survivors.forEach((survivor, index) => {
-            if (survivor.hasModel && index < 4) {
-                loadCharacterModel(
-                    survivor.modelPath + survivor.modelFile,
-                    survivor.name,
-                    characterPositions.survivors[index],
-                    'Survivor'
-                );
+            if (index >= 4) return;
+
+            const survivorUrl = (survivor && survivor.hasModel)
+                ? survivor.modelPath + survivor.modelFile
+                : null;
+
+            if (survivorUrl !== (loadedCharacters.survivors[index]?.url || null)) {
+                // Remove old survivor if exists
+                if (loadedCharacters.survivors[index]) {
+                    scene.remove(loadedCharacters.survivors[index].model);
+                    loadedCharacters.survivors[index] = null;
+                    console.log(`Removed old survivor at position ${index}`);
+                }
+
+                // Load new survivor if specified
+                if (survivorUrl) {
+                    loadCharacterModel(
+                        survivorUrl,
+                        survivor.name,
+                        characterPositions.survivors[index],
+                        'survivor',
+                        index
+                    );
+                }
+            } else if (survivorUrl) {
+                console.log(`Survivor ${index} unchanged: ${survivor.name}`);
             }
         });
     }
+
+    // Remove survivors that are no longer in the data
+    for (let i = (jsonData.survivors?.length || 0); i < 4; i++) {
+        if (loadedCharacters.survivors[i]) {
+            scene.remove(loadedCharacters.survivors[i].model);
+            loadedCharacters.survivors[i] = null;
+            console.log(`Removed survivor at position ${i} (no longer in data)`);
+        }
+    }
 };
 
-// Backward compatibility alias (old C# code may call this)
 window.loadHunterFromJson = window.loadCharactersJson;
 
-function loadCharacterModel(url, name, position, type) {
+function loadCharacterModel(url, name, position, type, index) {
     console.log(`Loading ${type}: ${name} from ${url}`);
 
     const loader = new GLTFLoader();
@@ -408,12 +446,9 @@ function loadCharacterModel(url, name, position, type) {
 
             const model = gltf.scene;
 
-            // Calculate bounding box for scaling (before any transformations)
-            // First, ensure model is at origin and has no scale applied
             model.position.set(0, 0, 0);
             model.scale.set(1, 1, 1);
 
-            // Update world matrices to ensure accurate bounding box
             model.updateMatrixWorld(true);
 
             const box = new THREE.Box3().setFromObject(model);
@@ -426,10 +461,8 @@ function loadCharacterModel(url, name, position, type) {
                 console.log(`Normalized ${name}: height=${height.toFixed(2)}, scale=${scale.toFixed(2)}`);
             }
 
-            // Position model at correct location
             model.position.copy(position);
 
-            // Enable shadows
             model.traverse((child) => {
                 if (child.isMesh) {
                     child.castShadow = true;
@@ -437,22 +470,34 @@ function loadCharacterModel(url, name, position, type) {
                 }
             });
 
-            // Setup animations if present
+            let mixer = null;
             if (gltf.animations && gltf.animations.length > 0) {
-                const mixer = new THREE.AnimationMixer(model);
+                mixer = new THREE.AnimationMixer(model);
 
-                // Play all animations
                 gltf.animations.forEach((clip) => {
                     const action = mixer.clipAction(clip);
                     action.play();
                 });
 
-                animationMixers.push(mixer);
                 console.log(`Loaded ${gltf.animations.length} animation(s) for ${name}`);
             }
 
             scene.add(model);
-            loadedModels.push(model);
+
+            const characterData = {
+                model: model,
+                mixer: mixer,
+                name: name,
+                url: url
+            };
+
+            if (type === 'hunter') {
+                loadedCharacters.hunter = characterData;
+            } else if (type === 'survivor' && index >= 0 && index < 4) {
+                loadedCharacters.survivors[index] = characterData;
+            }
+
+            console.log(`Stored ${type} ${name} in tracking system`);
         },
         undefined,
         (error) => {
@@ -542,8 +587,13 @@ function animate() {
     const delta = clock.getDelta();
 
     // Update all animation mixers
-    animationMixers.forEach(mixer => {
-        mixer.update(delta);
+    if (loadedCharacters.hunter?.mixer) {
+        loadedCharacters.hunter.mixer.update(delta);
+    }
+    loadedCharacters.survivors.forEach(survivor => {
+        if (survivor?.mixer) {
+            survivor.mixer.update(delta);
+        }
     });
 
     // Only update controls if enabled (DEV mode)
