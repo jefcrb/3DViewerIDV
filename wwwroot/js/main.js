@@ -8,7 +8,7 @@ import { populateDevDropdowns, setupDevMode } from './dev/devMode.js';
 
 const canvas = document.getElementById('renderCanvas');
 const renderer = setupRenderer(canvas);
-const scene = setupScene();
+const scene = setupScene(renderer);
 const camera = setupCamera();
 const controls = setupControls(camera, canvas);
 const clock = new THREE.Clock();
