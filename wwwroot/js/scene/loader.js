@@ -40,23 +40,43 @@ function findDummyModels(loadedScene) {
     return { hunter, survivors };
 }
 
-function getPositionsFromDummies(dummies) {
-    const positions = {
-        hunter: dummies.hunter ?
-            dummies.hunter.getWorldPosition(new THREE.Vector3()) :
-            DEFAULT_POSITIONS.hunter.clone(),
+function getTransformsFromDummies(dummies) {
+    const transforms = {
+        hunter: null,
         survivors: []
     };
 
+    if (dummies.hunter) {
+        transforms.hunter = {
+            position: dummies.hunter.getWorldPosition(new THREE.Vector3()),
+            rotation: dummies.hunter.rotation.clone(),
+            scale: dummies.hunter.scale.clone()
+        };
+    } else {
+        transforms.hunter = {
+            position: DEFAULT_POSITIONS.hunter.clone(),
+            rotation: new THREE.Euler(0, 0, 0),
+            scale: new THREE.Vector3(1, 1, 1)
+        };
+    }
+
     for (let i = 0; i < 4; i++) {
         if (dummies.survivors[i]) {
-            positions.survivors.push(dummies.survivors[i].getWorldPosition(new THREE.Vector3()));
+            transforms.survivors.push({
+                position: dummies.survivors[i].getWorldPosition(new THREE.Vector3()),
+                rotation: dummies.survivors[i].rotation.clone(),
+                scale: dummies.survivors[i].scale.clone()
+            });
         } else {
-            positions.survivors.push(DEFAULT_POSITIONS.survivors[i].clone());
+            transforms.survivors.push({
+                position: DEFAULT_POSITIONS.survivors[i].clone(),
+                rotation: new THREE.Euler(0, 0, 0),
+                scale: new THREE.Vector3(1, 1, 1)
+            });
         }
     }
 
-    return positions;
+    return transforms;
 }
 
 export function hideDummyModels(dummies) {
@@ -128,7 +148,7 @@ export function loadBlenderScene(scene, camera) {
                 }
 
                 state.dummyModels = findDummyModels(gltf.scene);
-                state.characterPositions = getPositionsFromDummies(state.dummyModels);
+                state.characterPositions = getTransformsFromDummies(state.dummyModels);
                 hideDummyModels(state.dummyModels);
 
                 state.sceneLoaded = true;
@@ -161,8 +181,16 @@ export function createMinimalFallbackScene(scene) {
     scene.add(ground);
 
     state.characterPositions = {
-        hunter: DEFAULT_POSITIONS.hunter.clone(),
-        survivors: DEFAULT_POSITIONS.survivors.map(p => p.clone())
+        hunter: {
+            position: DEFAULT_POSITIONS.hunter.clone(),
+            rotation: new THREE.Euler(0, 0, 0),
+            scale: new THREE.Vector3(1, 1, 1)
+        },
+        survivors: DEFAULT_POSITIONS.survivors.map(p => ({
+            position: p.clone(),
+            rotation: new THREE.Euler(0, 0, 0),
+            scale: new THREE.Vector3(1, 1, 1)
+        }))
     };
 
     console.log('Fallback scene created');

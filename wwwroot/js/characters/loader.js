@@ -30,7 +30,7 @@ export async function loadCustomScales() {
     }
 }
 
-export function loadCharacterModel(scene, url, name, position, type, index) {
+export function loadCharacterModel(scene, url, name, transform, type, index) {
     console.log(`Loading ${type}: ${name} from ${url}`);
 
     const loader = new GLTFLoader();
@@ -51,19 +51,24 @@ export function loadCharacterModel(scene, url, name, position, type, index) {
             const height = size.y;
 
             if (height > 0) {
-                const scale = TARGET_HEIGHT / height;
-                model.scale.setScalar(scale);
+                const baseScale = TARGET_HEIGHT / height;
+                let finalScale = baseScale;
 
                 if (state.customScales && state.customScales[name]) {
-                    const finalScale = scale * state.customScales[name];
-                    model.scale.setScalar(finalScale);
-                    console.log(`Normalized ${name}: height=${height.toFixed(2)}, base=${scale.toFixed(2)}, multiplier=${state.customScales[name]}, final=${finalScale.toFixed(2)}`);
-                } else {
-                    console.log(`Normalized ${name}: height=${height.toFixed(2)}, scale=${scale.toFixed(2)}`);
+                    finalScale *= state.customScales[name];
                 }
+
+                model.scale.set(
+                    finalScale * transform.scale.x,
+                    finalScale * transform.scale.y,
+                    finalScale * transform.scale.z
+                );
+
+                console.log(`Normalized ${name}: height=${height.toFixed(2)}, base=${baseScale.toFixed(2)}, dummy scale=(${transform.scale.x.toFixed(2)}, ${transform.scale.y.toFixed(2)}, ${transform.scale.z.toFixed(2)})`);
             }
 
-            model.position.copy(position);
+            model.position.copy(transform.position);
+            model.rotation.copy(transform.rotation);
 
             model.traverse((child) => {
                 if (child.isMesh) {
