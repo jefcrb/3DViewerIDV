@@ -9,14 +9,25 @@ export function setupRenderer(canvas) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 1.3;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     return renderer;
 }
 
-export function setupScene() {
+export function setupScene(renderer) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
+
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0xaaaaaa);
+    const envMap = pmremGenerator.fromScene(envScene).texture;
+    scene.environment = envMap;
+    pmremGenerator.dispose();
+
     return scene;
 }
 
@@ -46,10 +57,11 @@ export function setupControls(camera, canvas) {
 }
 
 export function setupStudioLighting(scene) {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambientLight);
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+    hemisphereLight.position.set(0, 20, 0);
+    scene.add(hemisphereLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
     keyLight.position.set(5, 8, 5);
     keyLight.target.position.set(0, 1, 0);
     keyLight.castShadow = true;
@@ -66,19 +78,19 @@ export function setupStudioLighting(scene) {
     scene.add(keyLight);
     scene.add(keyLight.target);
 
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
     fillLight.position.set(-5, 4, 5);
     fillLight.target.position.set(0, 1, 0);
     scene.add(fillLight);
     scene.add(fillLight.target);
 
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.9);
     rimLight.position.set(0, 6, -8);
     rimLight.target.position.set(0, 1, 0);
     scene.add(rimLight);
     scene.add(rimLight.target);
 
-    console.log('Studio lighting setup: Ambient + Key (shadows) + Fill + Rim');
+    console.log('Studio lighting: Hemisphere + Key (shadows) + Fill + Rim + Environment Map');
 }
 
 export function setupWindowResize(camera, renderer) {
