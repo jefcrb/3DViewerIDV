@@ -70,7 +70,7 @@ Copy the exported file to:
 ```
 as scene.glb
 
-### Quick development
+## Quick development
 Run a web server to view scene.glb to quickly test your model
 ```
 cd wwwroot
