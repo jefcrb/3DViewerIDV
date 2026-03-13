@@ -70,6 +70,14 @@ Copy the exported file to:
 ```
 as scene.glb
 
+### Quick development
+Run a web server to view scene.glb to quickly test your model
+```
+cd wwwroot
+python -m http.server 8080
+```
+http://localhost:8080/scene.html?dev=true
+
 ## Resources
 
 - **Blender Docs**: https://docs.blender.org/
