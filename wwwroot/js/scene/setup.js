@@ -51,7 +51,7 @@ export function setupControls(camera, canvas) {
     controls.maxDistance = 20;
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.enabled = DEV;
+    controls.enabled = false;
 
     return controls;
 }
