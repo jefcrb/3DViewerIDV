@@ -21,7 +21,13 @@ export const DEFAULT_POSITIONS = {
 
 export const TARGET_HEIGHT = 2.5;
 
-export const DEV = false;
+// ?dev=true
+function getDevMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('dev') === 'true';
+}
+
+export const DEV = getDevMode();
 
 export const AVAILABLE_HUNTERS = [
     { name: "Hell Ember", folder: "厂长" },
