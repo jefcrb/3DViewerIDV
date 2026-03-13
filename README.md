@@ -74,4 +74,3 @@ as scene.glb
 
 - **Blender Docs**: https://docs.blender.org/
 - **glTF Export Guide**: https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html
-- **Quick Reference**: See BLENDER_EXPORT_CHECKLIST.md
