@@ -77,8 +77,3 @@ cd wwwroot
 python -m http.server 8080
 ```
 http://localhost:8080/scene.html?dev=true
-
-## Resources
-
-- **Blender Docs**: https://docs.blender.org/
-- **glTF Export Guide**: https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html
