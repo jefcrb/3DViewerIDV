@@ -114,6 +114,17 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
                 console.log(`Loaded ${gltf.animations.length} animation(s) for ${name}`);
             }
 
+            // Remove any existing model at this position (handles async race conditions)
+            if (type === 'survivor' && index >= 0 && index < 4) {
+                if (state.loadedCharacters.survivors[index]) {
+                    scene.remove(state.loadedCharacters.survivors[index].model);
+                }
+            } else if (type === 'hunter') {
+                if (state.loadedCharacters.hunter) {
+                    scene.remove(state.loadedCharacters.hunter.model);
+                }
+            }
+
             scene.add(model);
 
             const characterData = {
