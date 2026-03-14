@@ -14,7 +14,6 @@ export async function loadCustomScales() {
     if (state.customScales) return state.customScales;
 
     try {
-        // Add cache busting to ensure we get the latest version
         const response = await fetch('./custom_scales.json?t=' + Date.now());
         if (!response.ok) {
             console.warn('custom_scales.json not found, using default scales');
@@ -44,13 +43,13 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
 
             model.position.set(0, 0, 0);
             model.scale.set(1, 1, 1);
-
             model.updateMatrixWorld(true);
 
             const box = new THREE.Box3().setFromObject(model);
             const size = box.getSize(new THREE.Vector3());
             const height = size.y;
 
+            // Normalize height and apply custom scales
             if (height > 0) {
                 const baseScale = TARGET_HEIGHT / height;
                 let finalScale = baseScale;
@@ -86,6 +85,7 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
             model.position.copy(transform.position);
             model.rotation.copy(transform.rotation);
 
+            // Apply Y-offset if specified
             const folderName = url.split('/').filter(Boolean).slice(-2, -1)[0];
             if (state.customScales) {
                 const customData = state.customScales[folderName] || state.customScales[name];
