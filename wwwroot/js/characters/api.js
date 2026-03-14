@@ -1,5 +1,39 @@
 import { state as sceneState, hideDummyModels } from '../scene/loader.js';
 import { state as characterState, loadCharacterModel } from './loader.js';
+import { playOutroAnimation } from '../customization/outroAnimation.js';
+
+// Detect if running in web context (localhost) vs WebView2 (app.local)
+const isWebContext = window.location.hostname === 'localhost';
+let lastFetchedData = null;
+
+console.log('[Init] Hostname:', window.location.hostname);
+console.log('[Init] Is web context:', isWebContext);
+
+// Poll character data from web server (only in web context)
+async function pollCharacterData() {
+    if (!isWebContext) return; // Skip if in WebView2
+
+    try {
+        console.log('[Polling] Fetching /api/characters...');
+        const response = await fetch('/api/characters');
+        const data = await response.json();
+        const dataStr = JSON.stringify(data);
+
+        console.log('[Polling] Received data:', data);
+        console.log('[Polling] Last data:', lastFetchedData);
+
+        // Only update if data changed
+        if (dataStr !== lastFetchedData) {
+            console.log('[Polling] Data changed, updating scene');
+            lastFetchedData = dataStr;
+            window.loadCharactersJson(data);
+        } else {
+            console.log('[Polling] Data unchanged, skipping update');
+        }
+    } catch (error) {
+        console.error('Failed to fetch character data:', error);
+    }
+}
 
 export function setupCharacterAPI(scene) {
     window.loadCharactersJson = function(jsonData) {
@@ -44,7 +78,10 @@ export function setupCharacterAPI(scene) {
 
                 if (survivorUrl !== (characterState.loadedCharacters.survivors[index]?.url || null)) {
                     if (characterState.loadedCharacters.survivors[index]) {
-                        scene.remove(characterState.loadedCharacters.survivors[index].model);
+                        const oldModel = characterState.loadedCharacters.survivors[index].model;
+                        playOutroAnimation(oldModel).then(() => {
+                            scene.remove(oldModel);
+                        });
                         characterState.loadedCharacters.survivors[index] = null;
                         console.log(`Removed old survivor at position ${index}`);
                     }
@@ -67,7 +104,10 @@ export function setupCharacterAPI(scene) {
 
         for (let i = (jsonData.survivors?.length || 0); i < 4; i++) {
             if (characterState.loadedCharacters.survivors[i]) {
-                scene.remove(characterState.loadedCharacters.survivors[i].model);
+                const oldModel = characterState.loadedCharacters.survivors[i].model;
+                playOutroAnimation(oldModel).then(() => {
+                    scene.remove(oldModel);
+                });
                 characterState.loadedCharacters.survivors[i] = null;
                 console.log(`Removed survivor at position ${i} (no longer in data)`);
             }
@@ -75,4 +115,13 @@ export function setupCharacterAPI(scene) {
     };
 
     window.loadHunterFromJson = window.loadCharactersJson;
+
+    // Start polling if in web context (OBS browser source)
+    if (isWebContext) {
+        console.log('[Init] Starting polling (every 1 second)');
+        setInterval(pollCharacterData, 1000); // Poll every 1 second
+        pollCharacterData(); // Initial fetch
+    } else {
+        console.log('[Init] WebView2 context detected, polling disabled');
+    }
 }
