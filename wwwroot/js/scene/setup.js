@@ -1,15 +1,18 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DEV } from '../config.js';
+import { getRendererSettings } from '../customization/materials.js';
 
 export function setupRenderer(canvas) {
     const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.3;
+
+    const settings = getRendererSettings();
+    renderer.shadowMap.type = settings.shadowMapType;
+    renderer.toneMapping = settings.toneMapping;
+    renderer.toneMappingExposure = settings.toneMappingExposure;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     return renderer;
@@ -56,42 +59,7 @@ export function setupControls(camera, canvas) {
     return controls;
 }
 
-export function setupStudioLighting(scene) {
-    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-    hemisphereLight.position.set(0, 20, 0);
-    scene.add(hemisphereLight);
-
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
-    keyLight.position.set(5, 8, 5);
-    keyLight.target.position.set(0, 1, 0);
-    keyLight.castShadow = true;
-    keyLight.shadow.mapSize.width = 2048;
-    keyLight.shadow.mapSize.height = 2048;
-    keyLight.shadow.camera.near = 0.5;
-    keyLight.shadow.camera.far = 50;
-    keyLight.shadow.camera.left = -15;
-    keyLight.shadow.camera.right = 15;
-    keyLight.shadow.camera.top = 15;
-    keyLight.shadow.camera.bottom = -15;
-    keyLight.shadow.bias = -0.0001;
-    keyLight.shadow.normalBias = 0.02;
-    scene.add(keyLight);
-    scene.add(keyLight.target);
-
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    fillLight.position.set(-5, 4, 5);
-    fillLight.target.position.set(0, 1, 0);
-    scene.add(fillLight);
-    scene.add(fillLight.target);
-
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    rimLight.position.set(0, 6, -8);
-    rimLight.target.position.set(0, 1, 0);
-    scene.add(rimLight);
-    scene.add(rimLight.target);
-
-    console.log('Studio lighting: Hemisphere + Key (shadows) + Fill + Rim + Environment Map');
-}
+export { setupStudioLighting } from '../customization/lighting.js';
 
 export function setupWindowResize(camera, renderer) {
     window.addEventListener('resize', () => {
