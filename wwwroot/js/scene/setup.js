@@ -4,7 +4,7 @@ import { DEV } from '../config.js';
 import { getRendererSettings } from '../customization/materials.js';
 
 export function setupRenderer(canvas) {
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.shadowMap.enabled = true;

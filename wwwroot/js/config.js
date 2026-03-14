@@ -67,7 +67,7 @@ export const DEV_DATA = {
     },
     survivors: [
         { name: "Doctor", hasModel: true, modelPath: "./survivors/医生/", modelFile: "医生.gltf" },
-        { name: "Night Watch", hasModel: true, modelPath: "./hunters/芬妮·吉尔曼/", modelFile: "芬妮·吉尔曼.gltf" },
+        { name: "Seer", hasModel: true, modelPath: "./survivors/先知/", modelFile: "先知.gltf" },
         { name: "Thief", hasModel: true, modelPath: "./survivors/慈善家/", modelFile: "慈善家.gltf" },
         { name: "Gardener", hasModel: true, modelPath: "./survivors/园丁/", modelFile: "园丁.gltf" }
     ]
