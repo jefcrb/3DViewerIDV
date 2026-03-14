@@ -14,7 +14,8 @@ export async function loadCustomScales() {
     if (state.customScales) return state.customScales;
 
     try {
-        const response = await fetch('./custom_scales.json');
+        // Add cache busting to ensure we get the latest version
+        const response = await fetch('./custom_scales.json?t=' + Date.now());
         if (!response.ok) {
             console.warn('custom_scales.json not found, using default scales');
             state.customScales = {};
@@ -30,7 +31,7 @@ export async function loadCustomScales() {
     }
 }
 
-export function loadCharacterModel(scene, url, name, transform, type, index) {
+export function loadCharacterModel(scene, url, name, transform, type, index, options = {}) {
     console.log(`Loading ${type}: ${name} from ${url}`);
 
     const loader = new GLTFLoader();
@@ -54,8 +55,23 @@ export function loadCharacterModel(scene, url, name, transform, type, index) {
                 const baseScale = TARGET_HEIGHT / height;
                 let finalScale = baseScale;
 
-                if (state.customScales && state.customScales[name]) {
-                    finalScale *= state.customScales[name];
+                if (options.bypassNormalization) {
+                    finalScale = 1.0;
+                }
+
+                const folderName = url.split('/').filter(Boolean).slice(-2, -1)[0];
+
+                if (state.customScales) {
+                    const customData = state.customScales[folderName] || state.customScales[name];
+                    if (customData) {
+                        if (typeof customData === 'number') {
+                            finalScale *= customData;
+                            console.log(`Applied custom scale for ${folderName}: ${customData}`);
+                        } else if (customData.scale) {
+                            finalScale *= customData.scale;
+                            console.log(`Applied custom scale for ${folderName}: ${customData.scale}`);
+                        }
+                    }
                 }
 
                 model.scale.set(
@@ -69,6 +85,15 @@ export function loadCharacterModel(scene, url, name, transform, type, index) {
 
             model.position.copy(transform.position);
             model.rotation.copy(transform.rotation);
+
+            const folderName = url.split('/').filter(Boolean).slice(-2, -1)[0];
+            if (state.customScales) {
+                const customData = state.customScales[folderName] || state.customScales[name];
+                if (customData && customData.yOffset) {
+                    model.position.y += customData.yOffset;
+                    console.log(`Applied Y-offset for ${folderName}: ${customData.yOffset}`);
+                }
+            }
 
             model.traverse((child) => {
                 if (child.isMesh) {
