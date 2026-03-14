@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { TARGET_HEIGHT } from '../config.js';
+import { playIntroAnimation } from '../customization/introAnimation.js';
+import { applyMaterialSettings } from '../customization/materials.js';
 
 export const state = {
     loadedCharacters: {
@@ -129,7 +131,7 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
             model.position.copy(transform.position);
             model.rotation.copy(transform.rotation);
 
-            // Apply Y-offset if specified
+            // Apply Y-offset
             const folderName = url.split('/').filter(Boolean).slice(-2, -1)[0];
             if (state.customScales) {
                 const customData = state.customScales[folderName] || state.customScales[name];
@@ -139,12 +141,7 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
                 }
             }
 
-            model.traverse((child) => {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                }
-            });
+            applyMaterialSettings(model);
 
             let mixer = null;
             if (gltf.animations && gltf.animations.length > 0) {
@@ -158,7 +155,7 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
                 console.log(`Loaded ${gltf.animations.length} animation(s) for ${name}`);
             }
 
-            // Remove any existing model at this position (handles async race conditions)
+            // Properly unload before loading new model
             if (type === 'survivor' && index >= 0 && index < 4) {
                 if (state.loadedCharacters.survivors[index]) {
                     scene.remove(state.loadedCharacters.survivors[index].model);
@@ -171,6 +168,7 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
 
             scene.add(model);
 
+            // Play intro animation
             playIntroAnimation(model);
 
             const characterData = {
