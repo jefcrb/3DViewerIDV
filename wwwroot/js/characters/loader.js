@@ -12,50 +12,6 @@ export const state = {
     customScales: null
 };
 
-// Intro animation
-function playIntroAnimation(model) {
-    const duration = 800;
-    const startY = model.position.y - 1.5;
-    const endY = model.position.y;
-    const startTime = performance.now();
-
-    model.position.y = startY;
-    model.traverse((child) => {
-        if (child.isMesh && child.material) {
-            child.material.transparent = true;
-            child.material.opacity = 0;
-        }
-    });
-
-    function animate() {
-        const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-
-        const eased = 1 - Math.pow(1 - progress, 3);
-
-        model.position.y = startY + (endY - startY) * eased;
-
-        model.traverse((child) => {
-            if (child.isMesh && child.material) {
-                child.material.opacity = eased;
-            }
-        });
-
-        if (progress < 1) {
-            requestAnimationFrame(animate);
-        } else {
-            model.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    child.material.transparent = false;
-                    child.material.opacity = 1;
-                }
-            });
-        }
-    }
-
-    animate();
-}
-
 export async function loadCustomScales() {
     if (state.customScales) return state.customScales;
 
