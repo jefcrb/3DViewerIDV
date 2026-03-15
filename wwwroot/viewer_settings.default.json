@@ -2,20 +2,20 @@
   "rendering": {
     "toneMapping": "ACESFilmic",
     "exposure": 1,
-    "shadowMapType": "PCF"
+    "shadowMapType": "VSM"
   },
   "lighting": {
-    "hemisphere": 0.02,
-    "keyLight": 0.8,
-    "fillLight": 0.02,
-    "rimLight": 0.02,
-    "sunLight": 3,
+    "hemisphere": 0.72,
+    "keyLight": 0.5,
+    "fillLight": 0.43,
+    "rimLight": 0.05,
+    "sunLight": 0.7,
     "lightColor": "#ffffff",
     "sunColor": "#ffffff"
   },
   "sunPosition": {
-    "x": 5,
-    "y": 15,
-    "z": 10
+    "x": 6,
+    "y": 6,
+    "z": -2
   }
 }

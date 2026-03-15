@@ -1,2 +1,5 @@
 *.claude
 plan/
+*comparison*
+wwwroot/assets/scene.glb
+wwwroot/viewer_settings.json
