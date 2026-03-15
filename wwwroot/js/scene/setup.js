@@ -3,17 +3,25 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DEV } from '../config.js';
 import { getRendererSettings } from '../customization/materials.js';
 
-export function setupRenderer(canvas) {
+export async function setupRenderer(canvas) {
     const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
+    await renderer.init();
+
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.shadowMap.enabled = true;
 
     const settings = getRendererSettings();
-    renderer.shadowMap.type = settings.shadowMapType;
+    renderer.shadowMap.enabled = true;
     renderer.toneMapping = settings.toneMapping;
     renderer.toneMappingExposure = settings.toneMappingExposure;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    console.log('WebGPU Renderer initialized:', {
+        backend: renderer.backend?.constructor?.name,
+        shadowMap: renderer.shadowMap.enabled,
+        toneMapping: renderer.toneMapping,
+        exposure: renderer.toneMappingExposure
+    });
 
     return renderer;
 }
