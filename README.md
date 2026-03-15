@@ -5,7 +5,7 @@ This project is a plugin for [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-
 
 **!! This project is new and only tested on my own PC and full of bugs, feel free to give feedback (discord: dostojefsky)**
 
-![showcase](showcase.gif)
+![showcase](assets/showcase.gif)
 
 ## Setup
 
@@ -70,10 +70,8 @@ Copy the exported file to:
 ```
 as scene.glb
 
-## Quick development
-Run a web server to view scene.glb to quickly test your model
-```
-cd wwwroot
-python -m http.server 8080
-```
-http://localhost:8080/scene.html?dev=true
+## Settings
+After installing the plugin, 3DViewerIDV settings page can be found. From here you can host a web browser source for OBS.
+![settingspage](assets/settingspage.png)
+Access the dev page at `http://localhost:{port}?dev=true` to find additional settings
+
