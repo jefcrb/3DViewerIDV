@@ -8,8 +8,8 @@ export const MATERIAL_CONFIG = {
     },
     rendering: {
         toneMapping: 'ACESFilmic',
-        toneMappingExposure: 1.3,
-        shadowMapType: 'Basic'
+        toneMappingExposure: 1.0,
+        shadowMapType: 'PCF'
     },
     overrides: {
         metalness: null,
