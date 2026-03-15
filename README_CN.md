@@ -6,7 +6,7 @@
 本项目是[neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf)的插件，用于支持3D图形。场景可以使用Blender编辑。请查看下面的说明。
 
 **!! 本项目仅在作者电脑上测试，bug较多，欢迎提供反馈 (discord: dostojefsky)**
-![效果展示](showcase.gif)
+![效果展示](assets/showcase.gif)
 
 ## 安装
 
@@ -69,10 +69,7 @@
 %APPDATA%\neo-bpsys-wpf\Plugins\3DViewerIDV\wwwroot\assets
 ```
 
-## 快速开发
-运行 Web 服务器以快速测试您的模型
-```
-cd wwwroot
-python -m http.server 8080
-```
-http://localhost:8080/scene.html?dev=true
+## 设置
+安装插件后，可以在软件中找到 3DViewerIDV 设置页面。在此可以为 OBS 启动 Web 浏览器源服务。
+![settingspage](assets/settingspage.png)
+访问 `http://localhost:{port}?dev=true` 开发页面以查找其他设置
