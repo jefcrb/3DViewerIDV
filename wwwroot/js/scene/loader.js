@@ -105,6 +105,23 @@ export function loadBlenderScene(scene, camera) {
                     if (child.isMesh) {
                         child.castShadow = true;
                         child.receiveShadow = true;
+
+                        if (child.material) {
+                            console.log(`Mesh: ${child.name}`);
+                            console.log(`  Material:`, child.material.type);
+                            console.log(`  Color:`, child.material.color);
+
+                            if (child.material.emissive) {
+                                console.log(`  Emissive BEFORE:`, child.material.emissive, 'Intensity:', child.material.emissiveIntensity);
+
+                                child.material.emissive.setHex(0x000000);
+                                child.material.emissiveIntensity = 0;
+
+                                console.log(`  Emissive AFTER:`, child.material.emissive, 'Intensity:', child.material.emissiveIntensity);
+                            }
+
+                            console.log(`  CastShadow: ${child.castShadow}, ReceiveShadow: ${child.receiveShadow}`);
+                        }
                     }
 
                     if (child.isLight) {
