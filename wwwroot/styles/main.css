@@ -61,8 +61,29 @@ html, body {
     backdrop-filter: blur(10px);
     color: white;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    min-width: 140px;
+    min-width: 180px;
+    max-width: 200px;
+    max-height: 90vh;
+    overflow-y: auto;
     display: none;
+}
+
+#devPanel::-webkit-scrollbar {
+    width: 6px;
+}
+
+#devPanel::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+#devPanel::-webkit-scrollbar-thumb {
+    background: rgba(255, 215, 0, 0.3);
+    border-radius: 3px;
+}
+
+#devPanel::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 215, 0, 0.5);
 }
 
 #devPanel h3 {
@@ -143,4 +164,95 @@ html, body {
 #devPanel button:hover {
     background: rgba(255, 215, 0, 0.3);
     transform: scale(1.02);
+}
+
+#devPanel hr {
+    border: none;
+    border-top: 1px solid rgba(255, 215, 0, 0.3);
+    margin: 10px 0 8px 0;
+}
+
+#devPanel h4 {
+    margin: 0 0 8px 0;
+    color: #FFD700;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#devPanel .slider-group {
+    margin-bottom: 8px;
+}
+
+#devPanel .slider-group label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3px;
+    font-size: 9px;
+    color: #aaa;
+}
+
+#devPanel .slider-group label span {
+    color: #FFD700;
+    font-weight: bold;
+}
+
+#devPanel input[type="range"] {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+#devPanel input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #FFD700;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+#devPanel input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #FFD700;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+#devPanel .color-group {
+    margin-bottom: 8px;
+}
+
+#devPanel .color-group label {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 9px;
+    color: #aaa;
+}
+
+#devPanel input[type="color"] {
+    width: 100%;
+    height: 24px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 2px;
+}
+
+#devPanel input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+#devPanel input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 2px;
 }
