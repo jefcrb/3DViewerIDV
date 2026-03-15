@@ -25,127 +25,127 @@
         <p id="errorMessage"></p>
     </div>
     <div id="devPanel">
-        <h3>DEV CONTROLS</h3>
+        <h3>DEV CONTROLS 开发控制</h3>
 
         <div class="dropdown-group">
-            <label>Hunter</label>
+            <label>Hunter 监管者</label>
             <select id="hunterSelect">
-                <option value="">None</option>
+                <option value="">None 无</option>
             </select>
         </div>
 
         <div class="dropdown-group">
-            <label>Survivor 1</label>
+            <label>Survivor 1 求生者1</label>
             <select id="survivor1Select">
-                <option value="">None</option>
+                <option value="">None 无</option>
             </select>
         </div>
 
         <div class="dropdown-group">
-            <label>Survivor 2</label>
+            <label>Survivor 2 求生者2</label>
             <select id="survivor2Select">
-                <option value="">None</option>
+                <option value="">None 无</option>
             </select>
         </div>
 
         <div class="dropdown-group">
-            <label>Survivor 3</label>
+            <label>Survivor 3 求生者3</label>
             <select id="survivor3Select">
-                <option value="">None</option>
+                <option value="">None 无</option>
             </select>
         </div>
 
         <div class="dropdown-group">
-            <label>Survivor 4</label>
+            <label>Survivor 4 求生者4</label>
             <select id="survivor4Select">
-                <option value="">None</option>
+                <option value="">None 无</option>
             </select>
         </div>
 
-        <button onclick="applyDevSelection()">Apply Changes</button>
+        <button onclick="applyDevSelection()">Apply Changes 应用更改</button>
 
         <hr>
-        <h4>RENDERING</h4>
+        <h4>RENDERING 渲染</h4>
 
         <div class="dropdown-group">
-            <label>Tone Mapping</label>
+            <label>Tone Mapping 色调映射</label>
             <select id="toneMappingSelect" onchange="applyRenderingSettings()">
-                <option value="NoToneMapping">No Tone Mapping</option>
-                <option value="Linear">Linear</option>
-                <option value="Reinhard">Reinhard</option>
-                <option value="Cineon">Cineon</option>
-                <option value="ACESFilmic" selected>ACES Filmic</option>
+                <option value="NoToneMapping">No Tone Mapping 无色调映射</option>
+                <option value="Linear">Linear 线性</option>
+                <option value="Reinhard">Reinhard 莱因哈德</option>
+                <option value="Cineon">Cineon 电影级</option>
+                <option value="ACESFilmic" selected>ACES Filmic ACES胶片</option>
             </select>
         </div>
 
         <div class="slider-group">
-            <label>Tone Mapping Exposure: <span id="exposureValue">1.0</span></label>
+            <label>Tone Mapping Exposure 色调映射曝光: <span id="exposureValue">1.0</span></label>
             <input type="range" id="exposureSlider" min="0.1" max="3.0" step="0.1" value="1.0" oninput="applyRenderingSettings()">
         </div>
 
         <div class="dropdown-group">
-            <label>Shadow Map Type</label>
+            <label>Shadow Map Type 阴影贴图类型</label>
             <select id="shadowMapTypeSelect" onchange="applyRenderingSettings()">
-                <option value="Basic">Basic</option>
-                <option value="PCF" selected>PCF</option>
-                <option value="PCFSoft">PCF Soft</option>
-                <option value="VSM">VSM</option>
+                <option value="Basic">Basic 基础</option>
+                <option value="PCF" selected>PCF 百分比渐近滤波</option>
+                <option value="PCFSoft">PCF Soft PCF软阴影</option>
+                <option value="VSM">VSM 方差阴影</option>
             </select>
         </div>
 
         <hr>
-        <h4>LIGHTING</h4>
+        <h4>LIGHTING 光照</h4>
 
         <div class="slider-group">
-            <label>Hemisphere: <span id="hemisphereValue">0.02</span></label>
+            <label>Hemisphere 半球光: <span id="hemisphereValue">0.02</span></label>
             <input type="range" id="hemisphereSlider" min="0" max="2.0" step="0.01" value="0.02" oninput="applyLightingSettings()">
         </div>
 
         <div class="slider-group">
-            <label>Key Light: <span id="keyLightValue">0.8</span></label>
+            <label>Key Light 主光源: <span id="keyLightValue">0.8</span></label>
             <input type="range" id="keyLightSlider" min="0" max="3.0" step="0.1" value="0.8" oninput="applyLightingSettings()">
         </div>
 
         <div class="slider-group">
-            <label>Fill Light: <span id="fillLightValue">0.02</span></label>
+            <label>Fill Light 补光: <span id="fillLightValue">0.02</span></label>
             <input type="range" id="fillLightSlider" min="0" max="2.0" step="0.01" value="0.02" oninput="applyLightingSettings()">
         </div>
 
         <div class="slider-group">
-            <label>Rim Light: <span id="rimLightValue">0.02</span></label>
+            <label>Rim Light 轮廓光: <span id="rimLightValue">0.02</span></label>
             <input type="range" id="rimLightSlider" min="0" max="2.0" step="0.01" value="0.02" oninput="applyLightingSettings()">
         </div>
 
         <div class="slider-group">
-            <label>Sun Light: <span id="sunLightValue">0.8</span></label>
+            <label>Sun Light 太阳光: <span id="sunLightValue">0.8</span></label>
             <input type="range" id="sunLightSlider" min="0" max="3.0" step="0.1" value="0.8" oninput="applyLightingSettings()">
         </div>
 
         <div class="color-group">
-            <label>Light Color</label>
+            <label>Light Color 光源颜色</label>
             <input type="color" id="lightColorPicker" value="#ffffff" oninput="applyLightingSettings()">
         </div>
 
         <div class="color-group">
-            <label>Sun Color</label>
+            <label>Sun Color 太阳颜色</label>
             <input type="color" id="sunColorPicker" value="#ffffff" oninput="applyLightingSettings()">
         </div>
 
         <hr>
-        <h4>SUN POSITION</h4>
+        <h4>SUN POSITION 太阳位置</h4>
 
         <div class="slider-group">
-            <label>X: <span id="sunXValue">5</span></label>
+            <label>X 横向: <span id="sunXValue">5</span></label>
             <input type="range" id="sunXSlider" min="-20" max="20" step="1" value="5" oninput="applySunPosition()">
         </div>
 
         <div class="slider-group">
-            <label>Y: <span id="sunYValue">15</span></label>
+            <label>Y 高度: <span id="sunYValue">15</span></label>
             <input type="range" id="sunYSlider" min="0" max="30" step="1" value="15" oninput="applySunPosition()">
         </div>
 
         <div class="slider-group">
-            <label>Z: <span id="sunZValue">10</span></label>
+            <label>Z 纵向: <span id="sunZValue">10</span></label>
             <input type="range" id="sunZSlider" min="-20" max="20" step="1" value="10" oninput="applySunPosition()">
         </div>
     </div>
