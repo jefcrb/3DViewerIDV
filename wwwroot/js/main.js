@@ -4,19 +4,12 @@ import { setupRenderer, setupScene, setupCamera, setupControls, setupStudioLight
 import { loadBlenderScene, createMinimalFallbackScene } from './scene/loader.js';
 import { loadCustomScales, state as characterState } from './characters/loader.js';
 import { setupCharacterAPI } from './characters/api.js';
-import { populateDevDropdowns, setupDevMode } from './dev/devMode.js';
+import { populateDevDropdowns, setupDevMode, setDevReferences, applyStoredSettings } from './dev/devMode.js';
 
 const canvas = document.getElementById('renderCanvas');
-const renderer = setupRenderer(canvas);
-const scene = setupScene(renderer);
-const camera = setupCamera();
-const controls = setupControls(camera, canvas);
 const clock = new THREE.Clock();
 
-setupStudioLighting(scene);
-setupWindowResize(camera, renderer);
-setupCharacterAPI(scene);
-setupDevMode();
+let renderer, scene, camera, controls, lights;
 
 async function initializeScene() {
     try {
@@ -55,23 +48,37 @@ function animate() {
 
 (async function() {
     try {
+        // Initialize WebGPU renderer
+        renderer = await setupRenderer(canvas);
+        scene = setupScene(renderer);
+        camera = setupCamera();
+        controls = setupControls(camera, canvas);
+
+        lights = setupStudioLighting(scene);
+        await applyStoredSettings(lights, renderer);
+
+        setupWindowResize(camera, renderer);
+        setupCharacterAPI(scene);
+        setupDevMode();
+        await setDevReferences(lights, renderer);
+
         await initializeScene();
         console.log('Scene ready');
+
+        animate();
+
+        if (DEV) {
+            console.log('DEV MODE: Enabled');
+            document.getElementById('devPanel').style.display = 'block';
+            populateDevDropdowns();
+
+            setTimeout(() => {
+                window.loadCharactersJson(DEV_DATA);
+            }, 500);
+        }
     } catch (error) {
         console.error('Fatal initialization error:', error);
         document.getElementById('error').style.display = 'block';
         document.getElementById('errorMessage').textContent = `Fatal error: ${error.message}`;
-    }
-
-    animate();
-
-    if (DEV) {
-        console.log('DEV MODE: Enabled');
-        document.getElementById('devPanel').style.display = 'block';
-        populateDevDropdowns();
-
-        setTimeout(() => {
-            window.loadCharactersJson(DEV_DATA);
-        }, 500);
     }
 })();
