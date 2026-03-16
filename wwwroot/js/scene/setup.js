@@ -6,13 +6,13 @@ import { getRendererSettings } from '../customization/materials.js';
 export async function setupRenderer(canvas, rendererType = 'webgpu') {
     let renderer;
 
-    if (rendererType === 'webgl') {
+    if (rendererType === 'webgpu') {
         console.log('Initializing WebGL Renderer');
-        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    } else {
-        console.log('Initializing WebGPU Renderer');
         renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
         await renderer.init();
+    } else {
+        console.log('Initializing WebGPU Renderer');
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     }
 
     renderer.setSize(window.innerWidth, window.innerHeight);
