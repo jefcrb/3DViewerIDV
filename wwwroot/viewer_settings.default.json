@@ -1,5 +1,6 @@
 ﻿{
   "rendering": {
+    "rendererType": "webgpu",
     "toneMapping": "ACESFilmic",
     "exposure": 1,
     "shadowMapType": "VSM"

@@ -8,6 +8,7 @@ let devRenderer = null;
 async function saveToStorage() {
     const settings = {
         rendering: {
+            rendererType: document.getElementById('rendererSelect').value,
             toneMapping: document.getElementById('toneMappingSelect').value,
             exposure: parseFloat(document.getElementById('exposureSlider').value),
             shadowMapType: document.getElementById('shadowMapTypeSelect').value
@@ -87,6 +88,9 @@ export async function applyStoredSettings(lights, renderer) {
 
 function applyLoadedSettings(settings) {
     if (settings.rendering) {
+        if (settings.rendering.rendererType) {
+            document.getElementById('rendererSelect').value = settings.rendering.rendererType;
+        }
         document.getElementById('toneMappingSelect').value = settings.rendering.toneMapping;
         document.getElementById('exposureSlider').value = settings.rendering.exposure;
         document.getElementById('shadowMapTypeSelect').value = settings.rendering.shadowMapType;
@@ -255,5 +259,14 @@ export function setupDevMode() {
 
         saveToStorage();
         console.log('Sun position updated:', { x, y, z });
+    };
+
+    window.applyRendererSetting = async function() {
+        const rendererType = document.getElementById('rendererSelect').value;
+        console.log('Renderer type changed to:', rendererType);
+
+        await saveToStorage();
+
+        alert(`Renderer changed to ${rendererType.toUpperCase()}.\n\nPlease reload the page for changes to take effect.`);
     };
 }
