@@ -3,9 +3,17 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DEV } from '../config.js';
 import { getRendererSettings } from '../customization/materials.js';
 
-export async function setupRenderer(canvas) {
-    const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
-    await renderer.init();
+export async function setupRenderer(canvas, rendererType = 'webgpu') {
+    let renderer;
+
+    if (rendererType === 'webgl') {
+        console.log('Initializing WebGL Renderer');
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    } else {
+        console.log('Initializing WebGPU Renderer');
+        renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
+        await renderer.init();
+    }
 
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -16,7 +24,8 @@ export async function setupRenderer(canvas) {
     renderer.toneMappingExposure = settings.toneMappingExposure;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    console.log('WebGPU Renderer initialized:', {
+    console.log(`${rendererType.toUpperCase()} Renderer initialized:`, {
+        type: rendererType,
         backend: renderer.backend?.constructor?.name,
         shadowMap: renderer.shadowMap.enabled,
         toneMapping: renderer.toneMapping,
@@ -30,14 +39,7 @@ export function setupScene(renderer) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
 
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    pmremGenerator.compileEquirectangularShader();
-
-    const envScene = new THREE.Scene();
-    envScene.background = new THREE.Color(0xaaaaaa);
-    const envMap = pmremGenerator.fromScene(envScene).texture;
-    scene.environment = envMap;
-    pmremGenerator.dispose();
+    // Environment map disabled
 
     return scene;
 }
