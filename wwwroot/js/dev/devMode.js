@@ -26,6 +26,11 @@ async function saveToStorage() {
             x: parseFloat(document.getElementById('sunXSlider').value),
             y: parseFloat(document.getElementById('sunYSlider').value),
             z: parseFloat(document.getElementById('sunZSlider').value)
+        },
+        keyLightPosition: {
+            x: parseFloat(document.getElementById('keyLightXSlider').value),
+            y: parseFloat(document.getElementById('keyLightYSlider').value),
+            z: parseFloat(document.getElementById('keyLightZSlider').value)
         }
     };
 
@@ -84,6 +89,14 @@ export async function applyStoredSettings(lights, renderer) {
             saved.sunPosition.z
         );
     }
+
+    if (saved.keyLightPosition && lights && lights.keyLight) {
+        lights.keyLight.position.set(
+            saved.keyLightPosition.x,
+            saved.keyLightPosition.y,
+            saved.keyLightPosition.z
+        );
+    }
 }
 
 function applyLoadedSettings(settings) {
@@ -112,9 +125,16 @@ function applyLoadedSettings(settings) {
         document.getElementById('sunZSlider').value = settings.sunPosition.z;
     }
 
+    if (settings.keyLightPosition) {
+        document.getElementById('keyLightXSlider').value = settings.keyLightPosition.x;
+        document.getElementById('keyLightYSlider').value = settings.keyLightPosition.y;
+        document.getElementById('keyLightZSlider').value = settings.keyLightPosition.z;
+    }
+
     window.applyRenderingSettings();
     window.applyLightingSettings();
     window.applySunPosition();
+    window.applyKeyLightPosition();
 
     console.log('Settings loaded from localStorage');
 }
@@ -261,8 +281,25 @@ export function setupDevMode() {
         console.log('Sun position updated:', { x, y, z });
     };
 
+    window.applyKeyLightPosition = function() {
+        if (!devLights) return;
+
+        const x = parseFloat(document.getElementById('keyLightXSlider').value);
+        const y = parseFloat(document.getElementById('keyLightYSlider').value);
+        const z = parseFloat(document.getElementById('keyLightZSlider').value);
+
+        devLights.keyLight.position.set(x, y, z);
+
+        document.getElementById('keyLightXValue').textContent = x;
+        document.getElementById('keyLightYValue').textContent = y;
+        document.getElementById('keyLightZValue').textContent = z;
+
+        saveToStorage();
+        console.log('Key light position updated:', { x, y, z });
+    };
+
     window.applyRendererSetting = async function() {
-        const rendererType = document.getElementById('rendererSelect').value;
+        const rendererType = 'webgl';
         console.log('Renderer type changed to:', rendererType);
 
         await saveToStorage();
