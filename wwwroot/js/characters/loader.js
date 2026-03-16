@@ -105,12 +105,12 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
                     if (gltf.animations && gltf.animations.length > 0) {
                         mixer = new THREE.AnimationMixer(model);
 
-                        gltf.animations.forEach((clip) => {
-                            const action = mixer.clipAction(clip);
-                            action.play();
-                        });
+                        // Only play the first animation to avoid conflicts
+                        const clip = gltf.animations[0];
+                        const action = mixer.clipAction(clip);
+                        action.play();
 
-                        console.log(`Loaded ${gltf.animations.length} animation(s) for ${name}`);
+                        console.log(`Playing animation: "${clip.name}" (1 of ${gltf.animations.length})`);
                     }
 
                     requestAnimationFrame(() => {
