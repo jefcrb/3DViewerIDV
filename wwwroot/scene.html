@@ -156,6 +156,24 @@
             <label>Z 纵向: <span id="sunZValue">10</span></label>
             <input type="range" id="sunZSlider" min="-20" max="20" step="1" value="10" oninput="applySunPosition()">
         </div>
+
+        <hr>
+        <h4>KEY LIGHT POSITION 主光源位置</h4>
+
+        <div class="slider-group">
+            <label>X 横向: <span id="keyLightXValue">5</span></label>
+            <input type="range" id="keyLightXSlider" min="-20" max="20" step="1" value="5" oninput="applyKeyLightPosition()">
+        </div>
+
+        <div class="slider-group">
+            <label>Y 高度: <span id="keyLightYValue">8</span></label>
+            <input type="range" id="keyLightYSlider" min="0" max="30" step="1" value="8" oninput="applyKeyLightPosition()">
+        </div>
+
+        <div class="slider-group">
+            <label>Z 纵向: <span id="keyLightZValue">5</span></label>
+            <input type="range" id="keyLightZSlider" min="-20" max="20" step="1" value="5" oninput="applyKeyLightPosition()">
+        </div>
     </div>
 
     <script type="module" src="js/main.js"></script>
