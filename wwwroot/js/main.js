@@ -5,6 +5,7 @@ import { loadBlenderScene, createMinimalFallbackScene } from './scene/loader.js'
 import { loadCustomScales, state as characterState } from './characters/loader.js';
 import { setupCharacterAPI } from './characters/api.js';
 import { populateDevDropdowns, setupDevMode, setDevReferences, applyStoredSettings } from './dev/devMode.js';
+import { loadSettings } from './storage/settingsStorage.js';
 
 const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
@@ -48,8 +49,11 @@ function animate() {
 
 (async function() {
     try {
-        // Initialize WebGPU renderer
-        renderer = await setupRenderer(canvas);
+        const settings = await loadSettings();
+        const rendererType = settings?.rendering?.rendererType || 'webgpu';
+        console.log('Using renderer:', rendererType);
+
+        renderer = await setupRenderer(canvas, rendererType);
         scene = setupScene(renderer);
         camera = setupCamera();
         controls = setupControls(camera, canvas);
