@@ -8,7 +8,7 @@
     <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.webgpu.min.js",
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
       }
     }
@@ -68,6 +68,14 @@
         <h4>RENDERING 渲染</h4>
 
         <div class="dropdown-group">
+            <label>Renderer 渲染器</label>
+            <select id="rendererSelect" onchange="applyRendererSetting()">
+            <!--    <option value="webgpu">WebGPU</option> -->
+                <option value="webgl">WebGL</option>
+            </select>
+        </div>
+
+        <div class="dropdown-group">
             <label>Tone Mapping 色调映射</label>
             <select id="toneMappingSelect" onchange="applyRenderingSettings()">
                 <option value="NoToneMapping">No Tone Mapping 无色调映射</option>
@@ -118,7 +126,7 @@
 
         <div class="slider-group">
             <label>Sun Light 太阳光: <span id="sunLightValue">0.8</span></label>
-            <input type="range" id="sunLightSlider" min="0" max="3.0" step="0.1" value="0.8" oninput="applyLightingSettings()">
+            <input type="range" id="sunLightSlider" min="0" max="10.0" step="0.1" value="0.8" oninput="applyLightingSettings()">
         </div>
 
         <div class="color-group">
