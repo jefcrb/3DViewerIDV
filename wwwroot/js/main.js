@@ -50,7 +50,7 @@ function animate() {
 (async function() {
     try {
         const settings = await loadSettings();
-        const rendererType = settings?.rendering?.rendererType || 'webgpu';
+        const rendererType = settings?.rendering?.rendererType || 'webgl';
         console.log('Using renderer:', rendererType);
 
         renderer = await setupRenderer(canvas, rendererType);
