@@ -12,6 +12,10 @@ const clock = new THREE.Clock();
 
 let renderer, scene, camera, controls, lights;
 
+const TARGET_FPS = 60;
+const MIN_FRAME_TIME = 1000 / TARGET_FPS;
+let lastFrameTime = 0;
+
 async function initializeScene() {
     try {
         await loadBlenderScene(scene, camera);
@@ -26,8 +30,15 @@ async function initializeScene() {
     }
 }
 
-function animate() {
+function animate(currentTime) {
     requestAnimationFrame(animate);
+
+    // FPS throttling
+    const elapsed = currentTime - lastFrameTime;
+    if (elapsed < MIN_FRAME_TIME) {
+        return;
+    }
+    lastFrameTime = currentTime - (elapsed % MIN_FRAME_TIME);
 
     const delta = clock.getDelta();
 
