@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { DEV, DEV_DATA } from './config.js';
 import { setupRenderer, setupScene, setupCamera, setupControls, setupStudioLighting, setupWindowResize } from './scene/setup.js';
 import { loadBlenderScene, createMinimalFallbackScene } from './scene/loader.js';
-import { loadCustomScales, state as characterState } from './characters/loader.js';
+import { loadCustomScales, preloadAllModels, state as characterState } from './characters/loader.js';
 import { setupCharacterAPI } from './characters/api.js';
 import { populateDevDropdowns, setupDevMode, setDevReferences, applyStoredSettings } from './dev/devMode.js';
 import { loadSettings } from './storage/settingsStorage.js';
@@ -79,6 +79,11 @@ function animate(currentTime) {
 
         await initializeScene();
         console.log('Scene ready');
+
+        // Preload all character models in background
+        preloadAllModels().catch(err => {
+            console.warn('Model preload encountered errors:', err);
+        });
 
         animate();
 
