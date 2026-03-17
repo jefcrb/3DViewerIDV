@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { DEV, DEV_DATA } from './config.js';
 import { setupRenderer, setupScene, setupCamera, setupControls, setupStudioLighting, setupWindowResize } from './scene/setup.js';
 import { loadBlenderScene, createMinimalFallbackScene } from './scene/loader.js';
-import { loadCustomScales, state as characterState } from './characters/loader.js';
+import { loadCustomScales, preloadAllModels, state as characterState } from './characters/loader.js';
 import { setupCharacterAPI } from './characters/api.js';
 import { populateDevDropdowns, setupDevMode, setDevReferences, applyStoredSettings } from './dev/devMode.js';
 import { loadSettings } from './storage/settingsStorage.js';
@@ -11,6 +11,10 @@ const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
 
 let renderer, scene, camera, controls, lights;
+
+const TARGET_FPS = 60;
+const MIN_FRAME_TIME = 1000 / TARGET_FPS;
+let lastFrameTime = 0;
 
 async function initializeScene() {
     try {
@@ -26,8 +30,15 @@ async function initializeScene() {
     }
 }
 
-function animate() {
+function animate(currentTime) {
     requestAnimationFrame(animate);
+
+    // FPS throttling
+    const elapsed = currentTime - lastFrameTime;
+    if (elapsed < MIN_FRAME_TIME) {
+        return;
+    }
+    lastFrameTime = currentTime - (elapsed % MIN_FRAME_TIME);
 
     const delta = clock.getDelta();
 
@@ -68,6 +79,11 @@ function animate() {
 
         await initializeScene();
         console.log('Scene ready');
+
+        // Preload all character models in background
+        preloadAllModels().catch(err => {
+            console.warn('Model preload encountered errors:', err);
+        });
 
         animate();
 

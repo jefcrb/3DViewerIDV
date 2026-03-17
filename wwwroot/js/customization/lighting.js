@@ -35,7 +35,7 @@ export const LIGHTING_CONFIG = {
         castShadow: true
     },
     shadows: {
-        mapSize: 2048,
+        mapSize: 1024,
         cameraBounds: 15,
         near: 0.5,
         far: 50,
