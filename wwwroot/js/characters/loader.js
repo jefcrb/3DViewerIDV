@@ -12,6 +12,46 @@ export const state = {
     customScales: null
 };
 
+function disposeModel(characterData) {
+    if (!characterData || !characterData.model) return;
+
+    console.log('Disposing model resources:', characterData.name);
+
+    if (characterData.mixer) {
+        characterData.mixer.stopAllAction();
+        characterData.mixer = null;
+    }
+
+    characterData.model.traverse((node) => {
+        if (node.geometry) {
+            node.geometry.dispose();
+        }
+
+        if (node.material) {
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            materials.forEach((material) => {
+                if (material) {
+                    if (material.map) material.map.dispose();
+                    if (material.lightMap) material.lightMap.dispose();
+                    if (material.bumpMap) material.bumpMap.dispose();
+                    if (material.normalMap) material.normalMap.dispose();
+                    if (material.specularMap) material.specularMap.dispose();
+                    if (material.envMap) material.envMap.dispose();
+                    if (material.alphaMap) material.alphaMap.dispose();
+                    if (material.aoMap) material.aoMap.dispose();
+                    if (material.displacementMap) material.displacementMap.dispose();
+                    if (material.emissiveMap) material.emissiveMap.dispose();
+                    if (material.gradientMap) material.gradientMap.dispose();
+                    if (material.metalnessMap) material.metalnessMap.dispose();
+                    if (material.roughnessMap) material.roughnessMap.dispose();
+
+                    material.dispose();
+                }
+            });
+        }
+    });
+}
+
 export async function loadCustomScales() {
     if (state.customScales) return state.customScales;
 
@@ -114,13 +154,15 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
                     }
 
                     requestAnimationFrame(() => {
-                        // Properly unload before loading new model
+                        // Properly dispose and unload before loading new model
                         if (type === 'survivor' && index >= 0 && index < 4) {
                             if (state.loadedCharacters.survivors[index]) {
+                                disposeModel(state.loadedCharacters.survivors[index]);
                                 scene.remove(state.loadedCharacters.survivors[index].model);
                             }
                         } else if (type === 'hunter') {
                             if (state.loadedCharacters.hunter) {
+                                disposeModel(state.loadedCharacters.hunter);
                                 scene.remove(state.loadedCharacters.hunter.model);
                             }
                         }
