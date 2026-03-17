@@ -42,13 +42,60 @@ function createSmokeTexture() {
     return new THREE.CanvasTexture(canvas);
 }
 
+// Stop intro animation and clean up resources
+export function stopIntroAnimation(model) {
+    if (!model.userData.introAnimation) return;
+
+    console.log('Stopping intro animation for model');
+
+    // Cancel animation frame
+    if (model.userData.introAnimation.rafId) {
+        cancelAnimationFrame(model.userData.introAnimation.rafId);
+    }
+
+    // Remove and dispose smoke particles
+    model.userData.introAnimation.smokeParticles.forEach((sprite) => {
+        if (sprite.parent) {
+            sprite.parent.remove(sprite);
+        }
+        if (sprite.material) {
+            sprite.material.dispose();
+        }
+        if (sprite.material?.map) {
+            sprite.material.map.dispose();
+        }
+    });
+
+    // Reset material opacity if fade-in was in progress
+    if (INTRO_CONFIG.fadeIn) {
+        model.traverse((child) => {
+            if (child.isMesh && child.material) {
+                child.material.transparent = false;
+                child.material.opacity = 1;
+            }
+        });
+    }
+
+    // Clear animation state
+    model.userData.introAnimation = null;
+}
+
 export function playIntroAnimation(model) {
+    // Stop any existing intro animation
+    stopIntroAnimation(model);
+
     const config = INTRO_CONFIG;
     // const startY = model.position.y - config.startOffset;
-    // const endY = model.position.y;                         
+    // const endY = model.position.y;
     const startTime = performance.now();
 
     // model.position.y = startY;
+
+    // Initialize animation state on model
+    model.userData.introAnimation = {
+        rafId: null,
+        smokeParticles: []
+    };
 
     // Set initial opacity to 0
     if (config.fadeIn) {
@@ -61,7 +108,6 @@ export function playIntroAnimation(model) {
     }
 
     // Create smoke particles
-    const smokeParticles = [];
     if (config.smoke.enabled) {
         const smokeTexture = createSmokeTexture();
         const spriteMaterial = new THREE.SpriteMaterial({
@@ -88,7 +134,7 @@ export function playIntroAnimation(model) {
             sprite.userData.riseSpeed = 0.3 + Math.random() * 0.5;
 
             model.parent.add(sprite);
-            smokeParticles.push(sprite);
+            model.userData.introAnimation.smokeParticles.push(sprite);
         }
     }
 
@@ -125,7 +171,7 @@ export function playIntroAnimation(model) {
                 smokeOpacity = config.smoke.opacity * (1 - dissipateProgress);
             }
 
-            smokeParticles.forEach((sprite) => {
+            model.userData.introAnimation.smokeParticles.forEach((sprite) => {
                 // Rise up
                 sprite.position.y = sprite.userData.initialY + (progress * sprite.userData.riseSpeed);
 
@@ -144,7 +190,7 @@ export function playIntroAnimation(model) {
         const characterDone = progress >= 1;
 
         if (!smokeDone || !characterDone) {
-            requestAnimationFrame(animate);
+            model.userData.introAnimation.rafId = requestAnimationFrame(animate);
         } else {
             // Cleanup
             if (config.fadeIn) {
@@ -157,12 +203,15 @@ export function playIntroAnimation(model) {
             }
 
             // Remove smoke particles
-            smokeParticles.forEach((sprite) => {
+            model.userData.introAnimation.smokeParticles.forEach((sprite) => {
                 model.parent.remove(sprite);
                 sprite.material.dispose();
             });
+
+            // Clear animation state
+            model.userData.introAnimation = null;
         }
     }
 
-    animate();
+    model.userData.introAnimation.rafId = requestAnimationFrame(animate);
 }

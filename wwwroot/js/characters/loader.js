@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { TARGET_HEIGHT } from '../config.js';
-import { playIntroAnimation } from '../customization/introAnimation.js';
+import { playIntroAnimation, stopIntroAnimation } from '../customization/introAnimation.js';
 import { applyMaterialSettings } from '../customization/materials.js';
 
 export const state = {
@@ -16,6 +16,8 @@ function disposeModel(characterData) {
     if (!characterData || !characterData.model) return;
 
     console.log('Disposing model resources:', characterData.name);
+
+    stopIntroAnimation(characterData.model);
 
     if (characterData.mixer) {
         characterData.mixer.stopAllAction();
