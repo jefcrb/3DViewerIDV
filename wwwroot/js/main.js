@@ -6,6 +6,7 @@ import { loadCustomScales, preloadAllModels, state as characterState } from './c
 import { setupCharacterAPI } from './characters/api.js';
 import { populateDevDropdowns, setupDevMode, setDevReferences, applyStoredSettings } from './dev/devMode.js';
 import { loadSettings } from './storage/settingsStorage.js';
+import { initKeyframeEditor, registerSceneObjects, playAnimationByTrigger } from './keyframe-editor.js';
 
 const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
@@ -91,6 +92,31 @@ function animate(currentTime) {
             console.log('DEV MODE: Enabled');
             document.getElementById('devPanel').style.display = 'block';
             populateDevDropdowns();
+
+            // Initialize keyframe editor (hidden by default, toggle with button)
+            document.getElementById('animatorToggle').style.display = 'block';
+            initKeyframeEditor(scene, camera, renderer, controls);
+
+            // Register all scene objects for animation
+            const sceneObjects = { camera, ...lights };
+            scene.traverse((child) => {
+                if (child.name && child.name !== '') {
+                    sceneObjects[child.name] = child;
+                }
+            });
+            registerSceneObjects(sceneObjects);
+
+            // Setup trigger listeners for character changes
+            window.addEventListener('characterChanged', (event) => {
+                playAnimationByTrigger('characterChange', {
+                    role: event.detail.role
+                });
+            });
+
+            // Play onLoad animations
+            setTimeout(() => {
+                playAnimationByTrigger('onLoad');
+            }, 500);
 
             setTimeout(() => {
                 window.loadCharactersJson(DEV_DATA);

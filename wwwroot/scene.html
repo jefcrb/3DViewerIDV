@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Character Viewer</title>
     <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/keyframe-editor.css">
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
     <script type="importmap">
     {
       "imports": {
@@ -16,6 +18,12 @@
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
+
+    <!-- Animator Toggle Button -->
+    <button id="animatorToggle" class="animator-toggle-btn" onclick="toggleAnimator()">
+        🎬 Animator
+    </button>
+
     <div id="info">
         <h2 id="hunterName">Loading...</h2>
         <p id="status">Initializing 3D viewer...</p>
@@ -173,6 +181,164 @@
         <div class="slider-group">
             <label>Z 纵向: <span id="keyLightZValue">5</span></label>
             <input type="range" id="keyLightZSlider" min="-20" max="20" step="1" value="5" oninput="applyKeyLightPosition()">
+        </div>
+    </div>
+
+    <!-- Keyframe Animation Editor -->
+    <div id="keyframeEditor">
+        <div class="editor-header">
+            <h3>🎬 ANIMATOR</h3>
+        </div>
+
+        <div class="editor-section">
+            <h4>1. Select Object</h4>
+            <div id="sceneObjectsList" class="scene-objects-list">
+                <p class="hint">Loading objects...</p>
+            </div>
+        </div>
+
+        <div class="editor-section">
+            <h4>Selected Object 选中对象</h4>
+            <div id="selectedObjectInfo" class="object-info">
+                <p class="hint">Select an object from the list above</p>
+            </div>
+        </div>
+
+        <div class="editor-section">
+            <h4>Current Properties 当前属性</h4>
+            <div id="currentProperties" class="properties-grid">
+                <div class="property-row">
+                    <label>Position X:</label>
+                    <span id="propPosX">-</span>
+                </div>
+                <div class="property-row">
+                    <label>Position Y:</label>
+                    <span id="propPosY">-</span>
+                </div>
+                <div class="property-row">
+                    <label>Position Z:</label>
+                    <span id="propPosZ">-</span>
+                </div>
+                <div class="property-row">
+                    <label>Rotation X:</label>
+                    <span id="propRotX">-</span>
+                </div>
+                <div class="property-row">
+                    <label>Rotation Y:</label>
+                    <span id="propRotY">-</span>
+                </div>
+                <div class="property-row">
+                    <label>Rotation Z:</label>
+                    <span id="propRotZ">-</span>
+                </div>
+                <div class="property-row">
+                    <label>Scale:</label>
+                    <span id="propScale">-</span>
+                </div>
+                <div class="property-row" id="propIntensityRow" style="display: none;">
+                    <label>Intensity:</label>
+                    <span id="propIntensity">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="editor-section">
+            <h4>2. Record Starting Position</h4>
+            <button id="recordFromBtn" class="btn-record" onclick="recordFrom()" disabled>
+                📍 Record FROM Position
+            </button>
+            <div id="fromStatus"></div>
+        </div>
+
+        <div class="editor-section">
+            <h4>3. Set Target & Add to Chain</h4>
+            <p class="hint" style="margin-bottom: 10px;">Drag the object to the target position, then add to chain</p>
+
+            <div class="form-group">
+                <label>Duration (ms):</label>
+                <input type="number" id="stepDuration" value="2000" min="100" step="100" />
+            </div>
+
+            <div class="form-group">
+                <label>Easing:</label>
+                <select id="stepEasing">
+                    <option value="none">Linear</option>
+                    <option value="power2.out" selected>Ease Out</option>
+                    <option value="power2.inOut">Ease In-Out</option>
+                    <option value="elastic.out">Elastic</option>
+                    <option value="back.out">Back</option>
+                    <option value="bounce.out">Bounce</option>
+                </select>
+            </div>
+
+            <button id="addToChainBtn" class="btn-primary" onclick="addToChain()" disabled>
+                ➕ Add to Chain
+            </button>
+        </div>
+
+        <div class="editor-section">
+            <h4>Animation Chain 动画链</h4>
+            <div id="chainList" class="chain-list">
+                <p class="hint">No animation steps yet</p>
+            </div>
+            <button class="btn-secondary" onclick="clearChain()">🗑️ Clear Chain</button>
+        </div>
+
+        <div class="editor-section">
+            <h4>4. Set Trigger & Save</h4>
+            <div class="form-group">
+                <label>Animation Name:</label>
+                <input type="text" id="animationName" placeholder="e.g., intro_camera" />
+            </div>
+
+            <div class="form-group">
+                <label>Trigger:</label>
+                <select id="animationTrigger" onchange="updateTriggerFields()">
+                    <option value="onLoad">On Load</option>
+                    <option value="time">Time Delay</option>
+                    <option value="characterChange">Character Change</option>
+                    <option value="custom">Custom Event</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="triggerDelayGroup">
+                <label>Delay (ms):</label>
+                <input type="number" id="triggerDelay" value="0" min="0" step="100" />
+            </div>
+
+            <div class="form-group" id="triggerTimeGroup" style="display: none;">
+                <label>Time (ms):</label>
+                <input type="number" id="triggerTime" value="5000" min="0" step="100" />
+            </div>
+
+            <div class="form-group" id="triggerCharacterGroup" style="display: none;">
+                <label>Character Role:</label>
+                <select id="triggerCharacterRole">
+                    <option value="hunter">Hunter</option>
+                    <option value="survivor">Survivor</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="triggerEventGroup" style="display: none;">
+                <label>Event Name:</label>
+                <input type="text" id="triggerEventName" placeholder="e.g., gameStart" />
+            </div>
+
+            <div class="action-controls">
+                <button class="btn-play" onclick="previewChain()">▶ Preview</button>
+                <button id="saveChainBtn" class="btn-save" onclick="saveChain()" disabled>💾 Save Animation</button>
+            </div>
+        </div>
+
+        <div class="editor-section">
+            <h4>Saved Animations 已保存动画</h4>
+            <div id="savedAnimationsList" class="saved-animations-list">
+                <p class="hint">No animations saved yet</p>
+            </div>
+            <div class="action-controls" style="margin-top: 10px;">
+                <button class="btn-secondary" onclick="exportAnimations()">📤 Export JSON</button>
+                <button class="btn-secondary" onclick="importAnimations()">📥 Import JSON</button>
+            </div>
         </div>
     </div>
 
