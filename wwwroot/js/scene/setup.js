@@ -6,6 +6,8 @@ import { getRendererSettings } from '../customization/materials.js';
 export async function setupRenderer(canvas, rendererType = 'webgpu') {
     let renderer;
 
+    rendererType = 'webgl'
+
     if (rendererType === 'webgpu') {
         console.log('Initializing WebGL Renderer');
         renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
