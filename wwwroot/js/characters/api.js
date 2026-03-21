@@ -14,21 +14,21 @@ async function pollCharacterData() {
     if (!isWebContext) return; // Skip if in WebView2
 
     try {
-        console.log('[Polling] Fetching /api/characters...');
+        // console.log('[Polling] Fetching /api/characters...');
         const response = await fetch('/api/characters');
         const data = await response.json();
         const dataStr = JSON.stringify(data);
 
-        console.log('[Polling] Received data:', data);
-        console.log('[Polling] Last data:', lastFetchedData);
+        // console.log('[Polling] Received data:', data);
+        // console.log('[Polling] Last data:', lastFetchedData);
 
         // Only update if data changed
         if (dataStr !== lastFetchedData) {
-            console.log('[Polling] Data changed, updating scene');
+            // console.log('[Polling] Data changed, updating scene');
             lastFetchedData = dataStr;
             window.loadCharactersJson(data);
         } else {
-            console.log('[Polling] Data unchanged, skipping update');
+            // console.log('[Polling] Data unchanged, skipping update');
         }
     } catch (error) {
         console.error('Failed to fetch character data:', error);
