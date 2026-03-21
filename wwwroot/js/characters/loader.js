@@ -114,7 +114,7 @@ export async function preloadAllModels() {
                     // Cache the entire GLTF object
                     modelCache.set(url, gltf);
                     totalLoaded++;
-                    console.log(`Cached: ${characterName} (${totalLoaded} loaded)`);
+                    // console.log(`Cached: ${characterName} (${totalLoaded} loaded)`);
                 } catch (error) {
                     console.warn(`Failed to preload ${characterName}:`, error.message);
                     totalFailed++;

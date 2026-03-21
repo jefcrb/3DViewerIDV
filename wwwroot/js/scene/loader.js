@@ -11,7 +11,8 @@ export const state = {
         hunter: null,
         survivors: []
     },
-    sceneLoaded: false
+    sceneLoaded: false,
+    blenderCamera: null  // Store reference to the Blender camera for animations
 };
 
 function configureLightShadow(light, mapSize = 1024) {
@@ -161,7 +162,28 @@ export function loadBlenderScene(scene, camera) {
                     const blenderCamera = gltf.cameras[0];
                     camera.position.copy(blenderCamera.position);
                     camera.rotation.copy(blenderCamera.rotation);
-                    console.log('Using camera from Blender scene');
+                    // Note: We don't copy FOV here - viewport camera keeps its own FOV for viewing
+                    console.log('Using camera position/rotation from Blender scene (Blender FOV:', blenderCamera.fov + '°)');
+
+                    // Add the Blender camera to the scene so it can be animated
+                    // Find the camera in the scene hierarchy and add helper
+                    gltf.scene.traverse((child) => {
+                        if (child.isCamera) {
+                            if (!child.name || child.name.trim() === '') {
+                                child.name = 'BlenderCamera';
+                            }
+
+                            // Store reference to the Blender camera for animation system
+                            state.blenderCamera = child;
+
+                            // Add a CameraHelper to visualize the camera frustum
+                            const cameraHelper = new THREE.CameraHelper(child);
+                            cameraHelper.visible = false; // Hide by default
+                            scene.add(cameraHelper);
+
+                            console.log(`Found camera in scene: ${child.name} (FOV: ${child.fov}°, Aspect: ${child.aspect.toFixed(2)})`);
+                        }
+                    });
                 }
 
                 state.dummyModels = findDummyModels(gltf.scene);

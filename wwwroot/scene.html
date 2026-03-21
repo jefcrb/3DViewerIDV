@@ -176,6 +176,328 @@
         </div>
     </div>
 
+    <!-- Keyframe Animation Panel -->
+    <div id="keyframePanel">
+        <h3>KEYFRAME ANIMATOR</h3>
+
+        <!-- Animatable Objects -->
+        <h4>CAMERA</h4>
+        <button onclick="selectObject('Camera')" id="cameraButton" class="object-button">
+            📷 Camera
+        </button>
+
+        <hr>
+
+        <h4>LIGHTS</h4>
+        <div class="object-list" id="lightList">
+            <p class="empty-state">No lights added</p>
+        </div>
+
+        <button onclick="showAddLightDialog()" class="add-button">+ Add Light</button>
+
+        <hr>
+
+        <!-- Selected Object Info -->
+        <h4>SELECTED OBJECT</h4>
+        <div id="selectedInfo">
+            <p class="empty-state">No object selected</p>
+        </div>
+
+        <!-- Object Action Buttons (shown for lights) -->
+        <div id="objectActions" style="display: none;">
+            <button onclick="duplicateLightObject()" class="icon-button" title="Duplicate Light">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+            </button>
+            <button onclick="deleteLightObject()" class="icon-button danger" title="Delete Light">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Tabbed Interface (shown when object is selected) -->
+        <div id="objectTabContainer" style="display: none;">
+            <!-- Tab Buttons -->
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="switchObjectTab('properties')">Properties</button>
+                <button class="tab-button" onclick="switchObjectTab('animations')">Animations</button>
+            </div>
+
+            <!-- Properties Tab -->
+            <div id="propertiesTab" class="tab-content active">
+                <!-- Camera Properties -->
+                <div id="cameraProperties" style="display: none;">
+                    <!-- Transform Controls for Camera -->
+                    <h4>TRANSFORM</h4>
+                    <div class="button-group">
+                        <button onclick="setTransformMode('translate')" class="small">Move</button>
+                        <button onclick="setTransformMode('rotate')" class="small">Rotate</button>
+                    </div>
+
+                    <div class="vector-input-group">
+                        <label>Position</label>
+                        <div class="vector-inputs">
+                            <input type="number" id="posX" step="0.1" placeholder="X" oninput="updateCameraTransform()">
+                            <input type="number" id="posY" step="0.1" placeholder="Y" oninput="updateCameraTransform()">
+                            <input type="number" id="posZ" step="0.1" placeholder="Z" oninput="updateCameraTransform()">
+                        </div>
+                    </div>
+
+                    <div class="vector-input-group">
+                        <label>Rotation (deg)</label>
+                        <div class="vector-inputs">
+                            <input type="number" id="rotX" step="1" placeholder="X" oninput="updateCameraTransform()">
+                            <input type="number" id="rotY" step="1" placeholder="Y" oninput="updateCameraTransform()">
+                            <input type="number" id="rotZ" step="1" placeholder="Z" oninput="updateCameraTransform()">
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="slider-group">
+                        <label>FOV: <span id="cameraFovValue">50</span>°</label>
+                        <input type="range" id="cameraFovSlider" min="20" max="120" step="1" value="50" oninput="updateCameraFov()">
+                    </div>
+                </div>
+
+                <!-- Light Properties -->
+                <div id="lightProperties" style="display: none;">
+                    <div class="text-input-group">
+                        <label>Light Name</label>
+                        <input type="text" id="lightNameInput" placeholder="Light name">
+                    </div>
+
+                    <div class="dropdown-group">
+                        <label>Light Type</label>
+                        <select id="lightTypeSelect" disabled>
+                            <option value="point">Point Light</option>
+                            <option value="spot">Spot Light</option>
+                            <option value="directional">Directional Light</option>
+                        </select>
+                    </div>
+
+                    <hr>
+
+                    <!-- Transform Controls for Light -->
+                    <h4>TRANSFORM</h4>
+                    <div class="button-group">
+                        <button onclick="setTransformMode('translate')" class="small">Move</button>
+                        <button onclick="setTransformMode('rotate')" class="small">Rotate</button>
+                    </div>
+
+                    <div class="vector-input-group">
+                        <label>Position</label>
+                        <div class="vector-inputs">
+                            <input type="number" id="posX_light" step="0.1" placeholder="X" oninput="updateLightTransform()">
+                            <input type="number" id="posY_light" step="0.1" placeholder="Y" oninput="updateLightTransform()">
+                            <input type="number" id="posZ_light" step="0.1" placeholder="Z" oninput="updateLightTransform()">
+                        </div>
+                    </div>
+
+                    <div class="vector-input-group">
+                        <label>Rotation (deg)</label>
+                        <div class="vector-inputs">
+                            <input type="number" id="rotX_light" step="1" placeholder="X" oninput="updateLightTransform()">
+                            <input type="number" id="rotY_light" step="1" placeholder="Y" oninput="updateLightTransform()">
+                            <input type="number" id="rotZ_light" step="1" placeholder="Z" oninput="updateLightTransform()">
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="slider-group">
+                        <label>Intensity: <span id="lightIntensityValue">1.0</span></label>
+                        <input type="range" id="lightIntensitySlider" min="0" max="10" step="0.1" value="1" oninput="updateLightIntensity()">
+                    </div>
+
+                    <div class="color-group">
+                        <label>Color</label>
+                        <input type="color" id="lightColorInput" value="#ffffff" oninput="updateLightColor()">
+                    </div>
+
+                    <!-- Spotlight-specific properties -->
+                    <div id="spotlightProperties" style="display: none;">
+                        <div class="slider-group">
+                            <label>Angle: <span id="spotAngleValue">45</span>°</label>
+                            <input type="range" id="spotAngleSlider" min="0" max="90" step="1" value="45" oninput="updateSpotAngle()">
+                        </div>
+
+                        <div class="slider-group">
+                            <label>Penumbra: <span id="spotPenumbraValue">0.1</span></label>
+                            <input type="range" id="spotPenumbraSlider" min="0" max="1" step="0.01" value="0.1" oninput="updateSpotPenumbra()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Animations Tab -->
+            <div id="animationsTab" class="tab-content">
+                <h4>ANIMATIONS</h4>
+                <div id="chainList">
+                    <p class="empty-state">No animations</p>
+                </div>
+
+                <button onclick="createNewChain()" class="add-button">+ New Animation</button>
+
+                <hr>
+
+                <!-- Chain Editor (shown when chain selected) -->
+                <div id="chainEditor" style="display: none;">
+                    <h4>ANIMATION SETTINGS</h4>
+
+                    <div class="text-input-group">
+                        <label>Animation Name</label>
+                        <input type="text" id="chainNameInput" placeholder="Animation name">
+                    </div>
+
+                    <div class="dropdown-group">
+                        <label>Trigger Type</label>
+                        <select id="triggerType" onchange="updateTriggerType()">
+                            <option value="manual">Manual</option>
+                            <option value="character_load">Character Load</option>
+                            <option value="character_unload">Character Unload</option>
+                            <option value="time_delay">Time Delay</option>
+                        </select>
+                    </div>
+
+                    <div id="triggerOptions"></div>
+
+                    <div class="button-group" style="margin-top: 12px;">
+                        <button onclick="saveChain()">💾 Save</button>
+                        <button onclick="deleteChain()" class="danger">Delete</button>
+                    </div>
+
+                    <hr>
+                    <h4>KEYFRAMES</h4>
+                    <div class="keyframe-list" id="keyframeList">
+                        <p class="empty-state">No keyframes</p>
+                    </div>
+
+                    <button onclick="addKeyframe()" class="add-button">+ Add Keyframe</button>
+                </div>
+
+                <!-- Keyframe Editor (shown when keyframe selected) -->
+                <div id="keyframeEditor" style="display: none;">
+            <hr>
+            <h4>KEYFRAME <span id="keyframeIndex"></span> SETTINGS</h4>
+
+            <div class="slider-group">
+                <label>Duration (ms): <span id="durationValue">1000</span></label>
+                <input type="range" id="durationSlider" min="100" max="5000" step="100" value="1000" oninput="updateKeyframeDuration()">
+            </div>
+
+            <div class="slider-group">
+                <label>Delay (ms): <span id="delayValue">0</span></label>
+                <input type="range" id="delaySlider" min="0" max="3000" step="100" value="0" oninput="updateKeyframeDelay()">
+            </div>
+
+            <div class="dropdown-group">
+                <label>Easing</label>
+                <select id="easingSelect" onchange="updateKeyframeEasing()">
+                    <option value="linear">Linear</option>
+                    <option value="easeInCubic">Ease In</option>
+                    <option value="easeOutCubic">Ease Out</option>
+                    <option value="easeInOutCubic">Ease In-Out</option>
+                </select>
+            </div>
+
+            <hr>
+            <h4>TARGET VALUES</h4>
+
+            <div class="vector-input-group" id="kfPositionGroup">
+                <label>Position</label>
+                <div class="vector-inputs">
+                    <input type="number" id="kfPosX" step="0.1" oninput="updateKeyframeProperties()">
+                    <input type="number" id="kfPosY" step="0.1" oninput="updateKeyframeProperties()">
+                    <input type="number" id="kfPosZ" step="0.1" oninput="updateKeyframeProperties()">
+                </div>
+            </div>
+
+            <div class="vector-input-group" id="kfRotationGroup">
+                <label>Rotation (deg)</label>
+                <div class="vector-inputs">
+                    <input type="number" id="kfRotX" step="1" oninput="updateKeyframeProperties()">
+                    <input type="number" id="kfRotY" step="1" oninput="updateKeyframeProperties()">
+                    <input type="number" id="kfRotZ" step="1" oninput="updateKeyframeProperties()">
+                </div>
+            </div>
+
+            <!-- Camera-specific properties -->
+            <div id="kfCameraProperties" style="display: none;">
+                <div class="slider-group">
+                    <label>FOV: <span id="kfFovValue">50</span>°</label>
+                    <input type="range" id="kfFovSlider" min="20" max="120" step="1" value="50" oninput="updateKeyframeProperties()">
+                </div>
+            </div>
+
+            <!-- Light-specific properties -->
+            <div id="kfLightProperties" style="display: none;">
+                <div class="slider-group">
+                    <label>Intensity: <span id="kfIntensityValue">1.0</span></label>
+                    <input type="range" id="kfIntensitySlider" min="0" max="10" step="0.1" value="1" oninput="updateKeyframeProperties()">
+                </div>
+
+                <div class="color-group">
+                    <label>Color</label>
+                    <input type="color" id="kfLightColor" value="#ffffff" oninput="updateKeyframeProperties()">
+                </div>
+
+                <!-- Spotlight-specific -->
+                <div id="kfSpotlightProperties" style="display: none;">
+                    <div class="slider-group">
+                        <label>Angle: <span id="kfSpotAngleValue">45</span>°</label>
+                        <input type="range" id="kfSpotAngleSlider" min="0" max="90" step="1" value="45" oninput="updateKeyframeProperties()">
+                    </div>
+
+                    <div class="slider-group">
+                        <label>Penumbra: <span id="kfSpotPenumbraValue">0.1</span></label>
+                        <input type="range" id="kfSpotPenumbraSlider" min="0" max="1" step="0.01" value="0.1" oninput="updateKeyframeProperties()">
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="syncFromObject()" class="secondary">📸 Set to Current State</button>
+
+            <div class="button-group" style="margin-top: 8px;">
+                <button onclick="deleteKeyframe()" class="danger">Delete Keyframe</button>
+            </div>
+        </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Light Dialog -->
+    <div id="addLightDialog" style="display: none;">
+        <div class="dialog-backdrop" onclick="closeAddLightDialog()"></div>
+        <div class="dialog-content">
+            <h4>ADD NEW LIGHT</h4>
+
+            <div style="margin-bottom: 12px; padding: 8px; background: #1e1e1e; border-radius: 4px; font-size: 11px; color: #b3b3b3;">
+                Name: <span id="newLightNamePreview" style="color: #e5e5e5; font-weight: 500;">Light_001</span>
+            </div>
+
+            <div class="dropdown-group">
+                <label>Light Type</label>
+                <select id="newLightType">
+                    <option value="point">Point Light</option>
+                    <option value="spot">Spot Light</option>
+                    <option value="directional">Directional Light</option>
+                </select>
+            </div>
+
+            <div class="button-group" style="margin-top: 16px;">
+                <button onclick="confirmAddLight()">Create</button>
+                <button onclick="closeAddLightDialog()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="js/main.js"></script>
 </body>
 </html>
