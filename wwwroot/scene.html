@@ -183,7 +183,7 @@
         <!-- Animatable Objects -->
         <h4>CAMERA</h4>
         <button onclick="selectObject('Camera')" id="cameraButton" class="object-button">
-            📷 Camera
+            Camera
         </button>
 
         <hr>
@@ -241,7 +241,19 @@
                     </div>
 
                     <div class="vector-input-group">
-                        <label>Position</label>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                            <label style="margin-bottom: 0;">Position</label>
+                            <button onclick="setTransformMode('translate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Move Mode">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="5 9 2 12 5 15"></polyline>
+                                    <polyline points="9 5 12 2 15 5"></polyline>
+                                    <polyline points="15 19 12 22 9 19"></polyline>
+                                    <polyline points="19 9 22 12 19 15"></polyline>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <line x1="12" y1="2" x2="12" y2="22"></line>
+                                </svg>
+                            </button>
+                        </div>
                         <div class="vector-inputs">
                             <input type="number" id="posX" step="0.1" placeholder="X" oninput="updateCameraTransform()">
                             <input type="number" id="posY" step="0.1" placeholder="Y" oninput="updateCameraTransform()">
@@ -250,7 +262,17 @@
                     </div>
 
                     <div class="vector-input-group">
-                        <label>Rotation (deg)</label>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                            <label style="margin-bottom: 0;">Rotation (deg)</label>
+                            <button onclick="setTransformMode('rotate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Rotate Mode">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21.5 2v6h-6"></path>
+                                    <path d="M2.5 22v-6h6"></path>
+                                    <path d="M2 11.5a10 10 0 0 1 18.8-4.3"></path>
+                                    <path d="M22 12.5a10 10 0 0 1-18.8 4.2"></path>
+                                </svg>
+                            </button>
+                        </div>
                         <div class="vector-inputs">
                             <input type="number" id="rotX" step="1" placeholder="X" oninput="updateCameraTransform()">
                             <input type="number" id="rotY" step="1" placeholder="Y" oninput="updateCameraTransform()">
@@ -292,7 +314,19 @@
                     </div>
 
                     <div class="vector-input-group">
-                        <label>Position</label>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                            <label style="margin-bottom: 0;">Position</label>
+                            <button onclick="setTransformMode('translate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Move Mode">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="5 9 2 12 5 15"></polyline>
+                                    <polyline points="9 5 12 2 15 5"></polyline>
+                                    <polyline points="15 19 12 22 9 19"></polyline>
+                                    <polyline points="19 9 22 12 19 15"></polyline>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <line x1="12" y1="2" x2="12" y2="22"></line>
+                                </svg>
+                            </button>
+                        </div>
                         <div class="vector-inputs">
                             <input type="number" id="posX_light" step="0.1" placeholder="X" oninput="updateLightTransform()">
                             <input type="number" id="posY_light" step="0.1" placeholder="Y" oninput="updateLightTransform()">
@@ -301,7 +335,17 @@
                     </div>
 
                     <div class="vector-input-group">
-                        <label>Rotation (deg)</label>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                            <label style="margin-bottom: 0;">Rotation (deg)</label>
+                            <button onclick="setTransformMode('rotate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Rotate Mode">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21.5 2v6h-6"></path>
+                                    <path d="M2.5 22v-6h6"></path>
+                                    <path d="M2 11.5a10 10 0 0 1 18.8-4.3"></path>
+                                    <path d="M22 12.5a10 10 0 0 1-18.8 4.2"></path>
+                                </svg>
+                            </button>
+                        </div>
                         <div class="vector-inputs">
                             <input type="number" id="rotX_light" step="1" placeholder="X" oninput="updateLightTransform()">
                             <input type="number" id="rotY_light" step="1" placeholder="Y" oninput="updateLightTransform()">
@@ -369,7 +413,7 @@
                     <div id="triggerOptions"></div>
 
                     <div class="button-group" style="margin-top: 12px;">
-                        <button onclick="saveChain()">💾 Save</button>
+                        <button onclick="saveChain()">Save</button>
                         <button onclick="deleteChain()" class="danger">Delete</button>
                     </div>
 
@@ -411,7 +455,19 @@
             <h4>TARGET VALUES</h4>
 
             <div class="vector-input-group" id="kfPositionGroup">
-                <label>Position</label>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                    <label style="margin-bottom: 0;">Position</label>
+                    <button onclick="setTransformMode('translate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Move Mode">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="5 9 2 12 5 15"></polyline>
+                            <polyline points="9 5 12 2 15 5"></polyline>
+                            <polyline points="15 19 12 22 9 19"></polyline>
+                            <polyline points="19 9 22 12 19 15"></polyline>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <line x1="12" y1="2" x2="12" y2="22"></line>
+                        </svg>
+                    </button>
+                </div>
                 <div class="vector-inputs">
                     <input type="number" id="kfPosX" step="0.1" oninput="updateKeyframeProperties()">
                     <input type="number" id="kfPosY" step="0.1" oninput="updateKeyframeProperties()">
@@ -420,7 +476,17 @@
             </div>
 
             <div class="vector-input-group" id="kfRotationGroup">
-                <label>Rotation (deg)</label>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                    <label style="margin-bottom: 0;">Rotation (deg)</label>
+                    <button onclick="setTransformMode('rotate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Rotate Mode">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.5 2v6h-6"></path>
+                            <path d="M2.5 22v-6h6"></path>
+                            <path d="M2 11.5a10 10 0 0 1 18.8-4.3"></path>
+                            <path d="M22 12.5a10 10 0 0 1-18.8 4.2"></path>
+                        </svg>
+                    </button>
+                </div>
                 <div class="vector-inputs">
                     <input type="number" id="kfRotX" step="1" oninput="updateKeyframeProperties()">
                     <input type="number" id="kfRotY" step="1" oninput="updateKeyframeProperties()">

@@ -29,6 +29,7 @@ let transformControls = null;
 let scene = null;
 let camera = null; // Animatable camera (Blender camera)
 let viewportCamera = null; // Viewport camera for rendering
+let originalObjectState = null; // Store original state when editing keyframes
 
 // Setup keyframe panel
 export function setupKeyframePanel(sceneRef, animatableCameraRef, viewportCameraRef, renderer, orbitControls) {
@@ -125,7 +126,12 @@ export function setupKeyframePanel(sceneRef, animatableCameraRef, viewportCamera
     // Listen for transform changes
     transformControls.addEventListener('change', () => {
         if (transformControls.object) {
-            updatePropertyDisplays();
+            // If editing a keyframe, update keyframe inputs instead of main property inputs
+            if (selectedKeyframe && selectedChain) {
+                updateKeyframePropertyDisplays();
+            } else {
+                updatePropertyDisplays();
+            }
 
             // Update spotlight target when rotating/moving spotlight
             if (selectedObjectData && selectedObjectData.type === 'light') {
@@ -310,6 +316,58 @@ function showObjectProperties() {
 function updatePropertyDisplays() {
     if (!selectedObjectName) return;
 
+    // If we're editing a keyframe, use the original state for property displays
+    // This prevents the main properties from showing the temporary keyframe position
+    let displaySource;
+    if (originalObjectState && selectedKeyframe) {
+        displaySource = originalObjectState;
+    } else {
+        // Otherwise, read from the actual object
+        if (selectedObjectData.type === 'camera') {
+            displaySource = {
+                position: camera.position,
+                rotation: camera.rotation
+            };
+        } else if (selectedObjectData.type === 'light') {
+            const light = getSceneLight(selectedObjectName);
+            if (light) {
+                displaySource = {
+                    position: light.position,
+                    rotation: light.rotation
+                };
+            }
+        }
+    }
+
+    if (!displaySource) return;
+
+    if (selectedObjectData.type === 'camera') {
+        // Position
+        document.getElementById('posX').value = displaySource.position.x.toFixed(2);
+        document.getElementById('posY').value = displaySource.position.y.toFixed(2);
+        document.getElementById('posZ').value = displaySource.position.z.toFixed(2);
+
+        // Rotation (convert to degrees)
+        document.getElementById('rotX').value = THREE.MathUtils.radToDeg(displaySource.rotation.x).toFixed(1);
+        document.getElementById('rotY').value = THREE.MathUtils.radToDeg(displaySource.rotation.y).toFixed(1);
+        document.getElementById('rotZ').value = THREE.MathUtils.radToDeg(displaySource.rotation.z).toFixed(1);
+    } else if (selectedObjectData.type === 'light') {
+        // Position (light-specific IDs)
+        document.getElementById('posX_light').value = displaySource.position.x.toFixed(2);
+        document.getElementById('posY_light').value = displaySource.position.y.toFixed(2);
+        document.getElementById('posZ_light').value = displaySource.position.z.toFixed(2);
+
+        // Rotation (convert to degrees, light-specific IDs)
+        document.getElementById('rotX_light').value = THREE.MathUtils.radToDeg(displaySource.rotation.x).toFixed(1);
+        document.getElementById('rotY_light').value = THREE.MathUtils.radToDeg(displaySource.rotation.y).toFixed(1);
+        document.getElementById('rotZ_light').value = THREE.MathUtils.radToDeg(displaySource.rotation.z).toFixed(1);
+    }
+}
+
+// Update keyframe property displays during keyframe editing
+function updateKeyframePropertyDisplays() {
+    if (!selectedObjectName || !selectedKeyframe) return;
+
     let obj;
     if (selectedObjectData.type === 'camera') {
         obj = camera;
@@ -319,27 +377,17 @@ function updatePropertyDisplays() {
 
     if (!obj) return;
 
-    if (selectedObjectData.type === 'camera') {
-        // Position
-        document.getElementById('posX').value = obj.position.x.toFixed(2);
-        document.getElementById('posY').value = obj.position.y.toFixed(2);
-        document.getElementById('posZ').value = obj.position.z.toFixed(2);
+    // Update keyframe inputs
+    document.getElementById('kfPosX').value = obj.position.x.toFixed(2);
+    document.getElementById('kfPosY').value = obj.position.y.toFixed(2);
+    document.getElementById('kfPosZ').value = obj.position.z.toFixed(2);
 
-        // Rotation (convert to degrees)
-        document.getElementById('rotX').value = THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1);
-        document.getElementById('rotY').value = THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1);
-        document.getElementById('rotZ').value = THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1);
-    } else if (selectedObjectData.type === 'light') {
-        // Position (light-specific IDs)
-        document.getElementById('posX_light').value = obj.position.x.toFixed(2);
-        document.getElementById('posY_light').value = obj.position.y.toFixed(2);
-        document.getElementById('posZ_light').value = obj.position.z.toFixed(2);
+    document.getElementById('kfRotX').value = THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1);
+    document.getElementById('kfRotY').value = THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1);
+    document.getElementById('kfRotZ').value = THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1);
 
-        // Rotation (convert to degrees, light-specific IDs)
-        document.getElementById('rotX_light').value = THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1);
-        document.getElementById('rotY_light').value = THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1);
-        document.getElementById('rotZ_light').value = THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1);
-    }
+    // Auto-save the keyframe properties
+    updateKeyframeProperties();
 }
 
 function attachTransformControlsToObject() {
@@ -578,6 +626,64 @@ function showKeyframeEditor(keyframe, index) {
     const editor = document.getElementById('keyframeEditor');
     editor.style.display = 'block';
 
+    // Store original object state from saved static properties (not current object position)
+    // This ensures we restore to the true static position, not any temporary position
+    const objects = getAllAnimatableObjects();
+    const objectData = objects[selectedObjectName];
+
+    if (objectData && objectData.properties) {
+        originalObjectState = {
+            position: new THREE.Vector3(
+                objectData.properties.position.x,
+                objectData.properties.position.y,
+                objectData.properties.position.z
+            ),
+            rotation: new THREE.Euler(
+                objectData.properties.rotation.x,
+                objectData.properties.rotation.y,
+                objectData.properties.rotation.z
+            )
+        };
+
+        // Add type-specific properties from saved data
+        if (selectedObjectData.type === 'camera' && objectData.properties.fov !== undefined) {
+            originalObjectState.fov = objectData.properties.fov;
+        } else if (selectedObjectData.type === 'light') {
+            if (objectData.properties.intensity !== undefined) {
+                originalObjectState.intensity = objectData.properties.intensity;
+            }
+            if (objectData.properties.color !== undefined) {
+                originalObjectState.color = new THREE.Color(objectData.properties.color);
+            }
+            if (objectData.lightType === 'spot') {
+                if (objectData.properties.angle !== undefined) {
+                    originalObjectState.angle = objectData.properties.angle;
+                }
+                if (objectData.properties.penumbra !== undefined) {
+                    originalObjectState.penumbra = objectData.properties.penumbra;
+                }
+            }
+        }
+
+        // Move object to keyframe's position/rotation for editing
+        let obj;
+        if (selectedObjectData.type === 'camera') {
+            obj = camera;
+        } else if (selectedObjectData.type === 'light') {
+            obj = getSceneLight(selectedObjectName);
+        }
+
+        if (obj) {
+            const props = keyframe.properties;
+            if (props.position) {
+                obj.position.set(props.position.x, props.position.y, props.position.z);
+            }
+            if (props.rotation) {
+                obj.rotation.set(props.rotation.x, props.rotation.y, props.rotation.z);
+            }
+        }
+    }
+
     // Populate fields
     document.getElementById('keyframeIndex').textContent = index + 1;
     document.getElementById('durationSlider').value = keyframe.duration;
@@ -652,6 +758,51 @@ function showKeyframeEditor(keyframe, index) {
 function hideKeyframeEditor() {
     document.getElementById('keyframeEditor').style.display = 'none';
     selectedKeyframe = null;
+    restoreOriginalObjectState();
+}
+
+// Restore object to its original state
+function restoreOriginalObjectState() {
+    if (!originalObjectState) return;
+
+    let obj;
+    if (selectedObjectData && selectedObjectData.type === 'camera') {
+        obj = camera;
+    } else if (selectedObjectData && selectedObjectData.type === 'light') {
+        obj = getSceneLight(selectedObjectName);
+    }
+
+    if (obj) {
+        obj.position.copy(originalObjectState.position);
+        obj.rotation.copy(originalObjectState.rotation);
+
+        // Restore type-specific properties
+        if (selectedObjectData.type === 'camera' && originalObjectState.fov !== undefined) {
+            obj.fov = originalObjectState.fov;
+            obj.updateProjectionMatrix();
+        } else if (selectedObjectData.type === 'light') {
+            if (originalObjectState.intensity !== undefined) {
+                obj.intensity = originalObjectState.intensity;
+            }
+            if (originalObjectState.color) {
+                obj.color.copy(originalObjectState.color);
+            }
+            if (obj.isSpotLight) {
+                if (originalObjectState.angle !== undefined) {
+                    obj.angle = originalObjectState.angle;
+                }
+                if (originalObjectState.penumbra !== undefined) {
+                    obj.penumbra = originalObjectState.penumbra;
+                }
+                updateSpotlightTarget(obj);
+            }
+        }
+
+        // Update property displays to reflect restored state
+        updatePropertyDisplays();
+    }
+
+    originalObjectState = null;
 }
 
 // Helper function to reload chain and maintain keyframe selection
@@ -827,6 +978,9 @@ window.deleteLightObject = function() {
 };
 
 window.updateCameraFov = function() {
+    // Don't update static properties while editing a keyframe
+    if (selectedKeyframe) return;
+
     const fov = parseFloat(document.getElementById('cameraFovSlider').value);
     document.getElementById('cameraFovValue').textContent = fov.toFixed(0);
     camera.fov = fov;
@@ -837,6 +991,9 @@ window.updateCameraFov = function() {
 };
 
 window.updateCameraTransform = function() {
+    // Don't update static properties while editing a keyframe
+    if (selectedKeyframe) return;
+
     const posX = parseFloat(document.getElementById('posX').value) || 0;
     const posY = parseFloat(document.getElementById('posY').value) || 0;
     const posZ = parseFloat(document.getElementById('posZ').value) || 0;
@@ -857,6 +1014,9 @@ window.updateCameraTransform = function() {
 };
 
 window.updateLightIntensity = function() {
+    // Don't update static properties while editing a keyframe
+    if (selectedKeyframe) return;
+
     const intensity = parseFloat(document.getElementById('lightIntensitySlider').value);
     document.getElementById('lightIntensityValue').textContent = intensity.toFixed(1);
 
@@ -869,6 +1029,9 @@ window.updateLightIntensity = function() {
 };
 
 window.updateLightColor = function() {
+    // Don't update static properties while editing a keyframe
+    if (selectedKeyframe) return;
+
     const colorHex = document.getElementById('lightColorInput').value.replace('#', '');
     const color = parseInt(colorHex, 16);
 
@@ -881,6 +1044,9 @@ window.updateLightColor = function() {
 };
 
 window.updateSpotAngle = function() {
+    // Don't update static properties while editing a keyframe
+    if (selectedKeyframe) return;
+
     const angleDeg = parseFloat(document.getElementById('spotAngleSlider').value);
     document.getElementById('spotAngleValue').textContent = angleDeg.toFixed(0);
 
@@ -903,6 +1069,9 @@ window.updateSpotAngle = function() {
 };
 
 window.updateSpotPenumbra = function() {
+    // Don't update static properties while editing a keyframe
+    if (selectedKeyframe) return;
+
     const penumbra = parseFloat(document.getElementById('spotPenumbraSlider').value);
     document.getElementById('spotPenumbraValue').textContent = penumbra.toFixed(2);
 
@@ -925,6 +1094,9 @@ window.updateSpotPenumbra = function() {
 
 window.updateLightTransform = function() {
     if (!selectedObjectName) return;
+
+    // Don't update static properties while editing a keyframe
+    if (selectedKeyframe) return;
 
     const posX = parseFloat(document.getElementById('posX_light').value) || 0;
     const posY = parseFloat(document.getElementById('posY_light').value) || 0;
@@ -1329,6 +1501,13 @@ function switchToTab(tabName) {
     if (tabName === 'properties') {
         propertiesTab.classList.add('active');
         animationsTab.classList.remove('active');
+
+        // Restore object to original position when switching to properties tab
+        if (selectedKeyframe) {
+            hideKeyframeEditor();
+        } else {
+            restoreOriginalObjectState();
+        }
     } else if (tabName === 'animations') {
         propertiesTab.classList.remove('active');
         animationsTab.classList.add('active');
