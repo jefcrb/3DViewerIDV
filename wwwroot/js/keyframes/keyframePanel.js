@@ -29,6 +29,7 @@ let transformControls = null;
 let scene = null;
 let camera = null; // Animatable camera (Blender camera)
 let viewportCamera = null; // Viewport camera for rendering
+let controls = null; // Orbit controls
 let originalObjectState = null; // Store original state when editing keyframes
 
 // Setup keyframe panel
@@ -36,6 +37,7 @@ export function setupKeyframePanel(sceneRef, animatableCameraRef, viewportCamera
     scene = sceneRef;
     camera = animatableCameraRef; // Camera to animate
     viewportCamera = viewportCameraRef; // Camera for viewing
+    controls = orbitControls; // Store orbit controls
 
     // Initialize transform controls with viewport camera (for correct gizmo positioning)
     transformControls = new TransformControls(viewportCamera, renderer.domElement);
@@ -146,7 +148,7 @@ export function setupKeyframePanel(sceneRef, animatableCameraRef, viewportCamera
     scene.add(transformControls);
 
     // Initialize UI
-    refreshLightList();
+    // refreshLightList();
 }
 
 // ==================== OBJECT MANAGEMENT ====================
@@ -177,8 +179,19 @@ function refreshLightList() {
 }
 
 function selectObject(objectName) {
+    // Detach transform controls to prevent updates to wrong object
+    if (transformControls) {
+        transformControls.detach();
+    }
+
     // Hide all helpers before selecting new object
     hideAllHelpers();
+
+    // Clear chain and keyframe selection when switching objects
+    selectedChain = null;
+    selectedKeyframe = null;
+    hideKeyframeEditor();
+    hideChainEditor();
 
     selectedObjectName = objectName;
     const objects = getAllAnimatableObjects();
@@ -293,8 +306,7 @@ function showObjectProperties() {
             // Update light property inputs
             document.getElementById('lightNameInput').value = selectedObjectName;
             document.getElementById('lightTypeSelect').value = selectedObjectData.lightType;
-            document.getElementById('lightIntensitySlider').value = light.intensity;
-            document.getElementById('lightIntensityValue').textContent = light.intensity.toFixed(1);
+            document.getElementById('lightIntensityInput').value = light.intensity.toFixed(1);
             document.getElementById('lightColorInput').value = '#' + light.color.getHex().toString(16).padStart(6, '0');
 
             // Show/hide spotlight properties
@@ -425,36 +437,44 @@ function loadObjectChains(objectName) {
         item.className = 'chain-item';
         item.title = 'Click to edit this animation';
 
+        // Migrate old format if needed
+        if (chain.trigger && !Array.isArray(chain.triggers)) {
+            chain.triggers = [convertOldTriggerFormat(chain.trigger)];
+        }
+        if (!chain.triggers) chain.triggers = [];
+
         // Build trigger info text
-        let triggerInfo = chain.trigger.type;
-        if (chain.trigger.type === 'character_load' || chain.trigger.type === 'character_unload') {
-            const actionType = chain.trigger.type === 'character_load' ? 'load' : 'unload';
-            if (chain.trigger.characterType === 'survivor' && chain.trigger.survivorPosition) {
-                triggerInfo = `Survivor ${chain.trigger.survivorPosition} ${actionType}`;
-            } else if (chain.trigger.characterType === 'hunter') {
-                triggerInfo = `Hunter ${actionType}`;
-            } else if (chain.trigger.characterType === 'survivor') {
-                triggerInfo = `Any Survivor ${actionType}`;
-            } else {
-                triggerInfo = `Any character ${actionType}`;
-            }
+        let triggerInfo = 'No triggers';
+        if (chain.triggers.length === 1) {
+            const trigger = chain.triggers[0];
+            triggerInfo = getTriggerDisplayName(trigger.type, trigger.delay);
+        } else if (chain.triggers.length > 1) {
+            triggerInfo = `${chain.triggers.length} triggers`;
         }
 
         item.innerHTML = `
+            <button class="chain-delete-btn" onclick="deleteChainFromCard('${objectName}', '${chain.id}')" title="Delete animation">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+            </button>
             <div class="chain-name">${chain.name}</div>
             <div class="chain-info">${chain.keyframes.length} keyframe${chain.keyframes.length !== 1 ? 's' : ''} • ${triggerInfo}</div>
-            <button onclick="playChain('${objectName}', '${chain.id}')">Play</button>
+            <div class="chain-buttons">
+                <button onclick="playChain('${objectName}', '${chain.id}')" title="Play animation">Play</button>
+                <button onclick="editChainFromCard('${objectName}', '${chain.id}')" title="Edit animation">Edit</button>
+            </div>
         `;
-        item.onclick = (e) => {
-            if (e.target.tagName !== 'BUTTON') {
-                selectChain(chain);
-            }
-        };
         listEl.appendChild(item);
     });
 }
 
 function selectChain(chain) {
+    console.log('[Chain] Selecting chain:', chain.name, 'for object:', selectedObjectName, 'Keyframes:', chain.keyframes?.length || 0);
+
     selectedChain = chain;
     selectedKeyframe = null;
     hideKeyframeEditor();
@@ -472,15 +492,42 @@ function selectChain(chain) {
 }
 
 function showChainEditor(chain) {
+    console.log('[Chain Editor] Opening editor for chain:', chain.name, 'Keyframes:', chain.keyframes?.length || 0);
+
     const editor = document.getElementById('chainEditor');
     editor.style.display = 'block';
 
     // Populate fields
     document.getElementById('chainNameInput').value = chain.name;
-    document.getElementById('triggerType').value = chain.trigger.type;
 
-    // Update trigger options
-    updateTriggerOptionsUI(chain.trigger);
+    // Migrate old trigger format to new array format if needed
+    if (chain.trigger && !Array.isArray(chain.triggers)) {
+        chain.triggers = [convertOldTriggerFormat(chain.trigger)];
+        delete chain.trigger;
+    }
+    if (chain.stopCondition && !Array.isArray(chain.stopConditions)) {
+        chain.stopConditions = [convertOldStopConditionFormat(chain.stopCondition)];
+        delete chain.stopCondition;
+    }
+
+    // Ensure triggers/stopConditions arrays exist
+    if (!chain.triggers) chain.triggers = [];
+    if (!chain.stopConditions) chain.stopConditions = [];
+
+    // Display triggers
+    displayTriggers(chain.triggers);
+
+    // Populate loop checkbox
+    document.getElementById('loopCheckbox').checked = chain.loop || false;
+
+    // Display stop conditions
+    displayStopConditions(chain.stopConditions);
+
+    // Reset new trigger/stop condition inputs
+    document.getElementById('newTriggerSelect').value = '';
+    document.getElementById('newStopConditionSelect').value = '';
+    document.getElementById('newTriggerOptions').innerHTML = '';
+    document.getElementById('newStopConditionOptions').innerHTML = '';
 
     // Load keyframes
     loadKeyframesForChain(chain);
@@ -491,48 +538,135 @@ function hideChainEditor() {
     selectedChain = null;
 }
 
-function updateTriggerOptionsUI(trigger) {
-    const optionsEl = document.getElementById('triggerOptions');
+// Convert old trigger format to new format
+function convertOldTriggerFormat(oldTrigger) {
+    let type = oldTrigger.type;
 
-    if (trigger.type === 'character_load' || trigger.type === 'character_unload') {
-        const showSurvivorPosition = trigger.characterType === 'survivor';
-
-        optionsEl.innerHTML = `
-            <div class="dropdown-group">
-                <label>Character Type</label>
-                <select id="characterTypeSelect" onchange="updateCharacterTypeUI()">
-                    <option value="">Any</option>
-                    <option value="hunter" ${trigger.characterType === 'hunter' ? 'selected' : ''}>Hunter</option>
-                    <option value="survivor" ${trigger.characterType === 'survivor' ? 'selected' : ''}>Survivor</option>
-                </select>
-            </div>
-            <div class="dropdown-group" id="survivorPositionGroup" style="display: ${showSurvivorPosition ? 'block' : 'none'};">
-                <label>Survivor Position</label>
-                <select id="survivorPositionSelect">
-                    <option value="">Any Survivor</option>
-                    <option value="1" ${trigger.survivorPosition === '1' ? 'selected' : ''}>1st Survivor</option>
-                    <option value="2" ${trigger.survivorPosition === '2' ? 'selected' : ''}>2nd Survivor</option>
-                    <option value="3" ${trigger.survivorPosition === '3' ? 'selected' : ''}>3rd Survivor</option>
-                    <option value="4" ${trigger.survivorPosition === '4' ? 'selected' : ''}>4th Survivor</option>
-                </select>
-            </div>
-        `;
-    } else if (trigger.type === 'time_delay') {
-        optionsEl.innerHTML = `
-            <div class="slider-group">
-                <label>Delay (ms): <span id="triggerDelayValue">${trigger.delay || 0}</span></label>
-                <input type="range" id="triggerDelaySlider" min="0" max="10000" step="100" value="${trigger.delay || 0}" oninput="updateTriggerDelay()">
-            </div>
-        `;
-    } else {
-        optionsEl.innerHTML = '';
+    // Convert old time_delay trigger to on_load
+    if (type === 'time_delay') {
+        type = 'on_load';
     }
+
+    if (type === 'character_load' || type === 'character_unload') {
+        if (oldTrigger.characterType === 'hunter') {
+            type = `${type}_hunter`;
+        } else if (oldTrigger.characterType === 'survivor') {
+            if (oldTrigger.survivorPosition) {
+                type = `${type}_survivor_${oldTrigger.survivorPosition}`;
+            } else {
+                type = `${type}_survivor`;
+            }
+        }
+    }
+
+    const newTrigger = { type };
+    return newTrigger;
+}
+
+// Convert old stop condition format to new format
+function convertOldStopConditionFormat(oldCondition) {
+    let type = oldCondition.type;
+
+    if (type === 'character_load' || type === 'character_unload') {
+        if (oldCondition.characterType === 'hunter') {
+            type = `${type}_hunter`;
+        } else if (oldCondition.characterType === 'survivor') {
+            if (oldCondition.survivorPosition) {
+                type = `${type}_survivor_${oldCondition.survivorPosition}`;
+            } else {
+                type = `${type}_survivor`;
+            }
+        }
+    }
+
+    const newCondition = { type };
+    if (type === 'time_delay') {
+        newCondition.delay = oldCondition.delay || 0;
+    }
+    return newCondition;
+}
+
+// Get display name for trigger/stop condition type
+function getTriggerDisplayName(type, delay) {
+    const names = {
+        'on_load': 'On Load',
+        'manual': 'Manual',
+        'character_load': 'Any Character Load',
+        'character_load_hunter': 'Hunter Load',
+        'character_load_survivor': 'Any Survivor Load',
+        'character_load_survivor_1': 'Survivor 1 Load',
+        'character_load_survivor_2': 'Survivor 2 Load',
+        'character_load_survivor_3': 'Survivor 3 Load',
+        'character_load_survivor_4': 'Survivor 4 Load',
+        'character_unload': 'Any Character Unload',
+        'character_unload_hunter': 'Hunter Unload',
+        'character_unload_survivor': 'Any Survivor Unload',
+        'character_unload_survivor_1': 'Survivor 1 Unload',
+        'character_unload_survivor_2': 'Survivor 2 Unload',
+        'character_unload_survivor_3': 'Survivor 3 Unload',
+        'character_unload_survivor_4': 'Survivor 4 Unload',
+        'time_delay': `Time Delay (${delay}ms)`,
+        'none': 'None'
+    };
+    return names[type] || type;
+}
+
+// Display triggers list
+function displayTriggers(triggers) {
+    const listEl = document.getElementById('triggersList');
+
+    if (!triggers || triggers.length === 0) {
+        listEl.innerHTML = '<p style="padding: 0 12px; margin: 8px 0; font-size: 11px; color: #888;">No triggers set</p>';
+        return;
+    }
+
+    let html = '<div style="padding: 0 12px; margin-bottom: 12px;">';
+    triggers.forEach((trigger, index) => {
+        html += `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 6px; background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 4px;">
+                <span style="flex: 1; font-size: 11px; color: #e5e5e5;">${getTriggerDisplayName(trigger.type, trigger.delay)}</span>
+                <button onclick="removeTrigger(${index})" style="padding: 2px 6px; font-size: 10px; background: #3c2c2c; border: 1px solid #5c3c3c; color: #ff6b6b; border-radius: 3px; cursor: pointer;">Remove</button>
+            </div>
+        `;
+    });
+    html += '</div>';
+    listEl.innerHTML = html;
+}
+
+// Display stop conditions list
+function displayStopConditions(stopConditions) {
+    const listEl = document.getElementById('stopConditionsList');
+
+    if (!stopConditions || stopConditions.length === 0) {
+        listEl.innerHTML = '<p style="padding: 0 12px; margin: 8px 0; font-size: 11px; color: #888;">No stop conditions set</p>';
+        return;
+    }
+
+    let html = '<div style="padding: 0 12px; margin-bottom: 12px;">';
+    stopConditions.forEach((condition, index) => {
+        html += `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 6px; background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 4px;">
+                <span style="flex: 1; font-size: 11px; color: #e5e5e5;">${getTriggerDisplayName(condition.type, condition.delay)}</span>
+                <button onclick="removeStopCondition(${index})" style="padding: 2px 6px; font-size: 10px; background: #3c2c2c; border: 1px solid #5c3c3c; color: #ff6b6b; border-radius: 3px; cursor: pointer;">Remove</button>
+            </div>
+        `;
+    });
+    html += '</div>';
+    listEl.innerHTML = html;
 }
 
 // ==================== KEYFRAME MANAGEMENT ====================
 
 function loadKeyframesForChain(chain) {
+    console.log('[Keyframes] Loading keyframes for chain:', chain.name, 'Count:', chain.keyframes?.length || 0, 'Keyframes:', chain.keyframes);
+
     const listEl = document.getElementById('keyframeList');
+
+    // Ensure keyframes array exists
+    if (!chain.keyframes) {
+        console.warn('[Keyframes] No keyframes array found, initializing empty array');
+        chain.keyframes = [];
+    }
 
     if (chain.keyframes.length === 0) {
         listEl.innerHTML = '<p class="empty-state">No keyframes</p>';
@@ -733,8 +867,7 @@ function showKeyframeEditor(keyframe, index) {
     // Light-specific properties
     if (selectedObjectData.type === 'light') {
         if (props.intensity !== undefined) {
-            document.getElementById('kfIntensitySlider').value = props.intensity;
-            document.getElementById('kfIntensityValue').textContent = props.intensity.toFixed(1);
+            document.getElementById('kfIntensityInput').value = props.intensity.toFixed(1);
         }
         if (props.color !== undefined) {
             document.getElementById('kfLightColor').value = '#' + props.color.toString(16).padStart(6, '0');
@@ -871,7 +1004,7 @@ window.confirmAddLight = function() {
         const objects = getAllAnimatableObjects();
         const lightData = objects[finalName];
         createSceneLight(scene, finalName, lightType, lightData.properties);
-        refreshLightList();
+        // refreshLightList();
 
         // Auto-select the new light
         setTimeout(() => selectObject(finalName), 100);
@@ -947,7 +1080,7 @@ window.duplicateLightObject = function() {
     createSceneLight(scene, finalName, sourceLight.lightType, duplicateProps);
 
     // Refresh UI
-    refreshLightList();
+    // refreshLightList();
 
     // Auto-select the duplicate
     setTimeout(() => selectObject(finalName), 100);
@@ -972,7 +1105,7 @@ window.deleteLightObject = function() {
     document.getElementById('chainList').innerHTML = '<p class="empty-state">No animations</p>';
 
     transformControls.detach();
-    refreshLightList();
+    // refreshLightList();
     hideChainEditor();
     hideKeyframeEditor();
 };
@@ -980,6 +1113,9 @@ window.deleteLightObject = function() {
 window.updateCameraFov = function() {
     // Don't update static properties while editing a keyframe
     if (selectedKeyframe) return;
+
+    // Verify we have the camera selected
+    if (!selectedObjectName || selectedObjectName !== 'Camera' || !selectedObjectData || selectedObjectData.type !== 'camera') return;
 
     const fov = parseFloat(document.getElementById('cameraFovSlider').value);
     document.getElementById('cameraFovValue').textContent = fov.toFixed(0);
@@ -993,6 +1129,9 @@ window.updateCameraFov = function() {
 window.updateCameraTransform = function() {
     // Don't update static properties while editing a keyframe
     if (selectedKeyframe) return;
+
+    // Verify we have the camera selected
+    if (!selectedObjectName || selectedObjectName !== 'Camera' || !selectedObjectData || selectedObjectData.type !== 'camera') return;
 
     const posX = parseFloat(document.getElementById('posX').value) || 0;
     const posY = parseFloat(document.getElementById('posY').value) || 0;
@@ -1017,8 +1156,10 @@ window.updateLightIntensity = function() {
     // Don't update static properties while editing a keyframe
     if (selectedKeyframe) return;
 
-    const intensity = parseFloat(document.getElementById('lightIntensitySlider').value);
-    document.getElementById('lightIntensityValue').textContent = intensity.toFixed(1);
+    // Verify we have a light selected
+    if (!selectedObjectName || !selectedObjectData || selectedObjectData.type !== 'light') return;
+
+    const intensity = parseFloat(document.getElementById('lightIntensityInput').value);
 
     const light = getSceneLight(selectedObjectName);
     if (light) {
@@ -1031,6 +1172,9 @@ window.updateLightIntensity = function() {
 window.updateLightColor = function() {
     // Don't update static properties while editing a keyframe
     if (selectedKeyframe) return;
+
+    // Verify we have a light selected
+    if (!selectedObjectName || !selectedObjectData || selectedObjectData.type !== 'light') return;
 
     const colorHex = document.getElementById('lightColorInput').value.replace('#', '');
     const color = parseInt(colorHex, 16);
@@ -1046,6 +1190,9 @@ window.updateLightColor = function() {
 window.updateSpotAngle = function() {
     // Don't update static properties while editing a keyframe
     if (selectedKeyframe) return;
+
+    // Verify we have a spotlight selected
+    if (!selectedObjectName || !selectedObjectData || selectedObjectData.type !== 'light' || selectedObjectData.lightType !== 'spot') return;
 
     const angleDeg = parseFloat(document.getElementById('spotAngleSlider').value);
     document.getElementById('spotAngleValue').textContent = angleDeg.toFixed(0);
@@ -1072,6 +1219,9 @@ window.updateSpotPenumbra = function() {
     // Don't update static properties while editing a keyframe
     if (selectedKeyframe) return;
 
+    // Verify we have a spotlight selected
+    if (!selectedObjectName || !selectedObjectData || selectedObjectData.type !== 'light' || selectedObjectData.lightType !== 'spot') return;
+
     const penumbra = parseFloat(document.getElementById('spotPenumbraSlider').value);
     document.getElementById('spotPenumbraValue').textContent = penumbra.toFixed(2);
 
@@ -1093,7 +1243,8 @@ window.updateSpotPenumbra = function() {
 };
 
 window.updateLightTransform = function() {
-    if (!selectedObjectName) return;
+    // Verify we have a light selected
+    if (!selectedObjectName || !selectedObjectData || selectedObjectData.type !== 'light') return;
 
     // Don't update static properties while editing a keyframe
     if (selectedKeyframe) return;
@@ -1147,33 +1298,88 @@ window.createNewChain = function() {
     }
 };
 
-window.updateTriggerType = function() {
+window.addTrigger = function() {
     if (!selectedChain) return;
 
-    const triggerType = document.getElementById('triggerType').value;
-    selectedChain.trigger.type = triggerType;
+    const triggerType = document.getElementById('newTriggerSelect').value;
+    if (!triggerType) return;
 
-    // Reset trigger options
-    selectedChain.trigger.characterName = null;
-    selectedChain.trigger.characterType = null;
-    selectedChain.trigger.survivorPosition = null;
-    selectedChain.trigger.delay = 0;
+    const trigger = { type: triggerType };
 
-    updateTriggerOptionsUI(selectedChain.trigger);
+    // Ensure triggers array exists
+    if (!selectedChain.triggers) selectedChain.triggers = [];
+
+    selectedChain.triggers.push(trigger);
+    displayTriggers(selectedChain.triggers);
+
+    // Reset selection
+    document.getElementById('newTriggerSelect').value = '';
 };
 
-window.updateCharacterTypeUI = function() {
-    const characterType = document.getElementById('characterTypeSelect')?.value;
-    const survivorPositionGroup = document.getElementById('survivorPositionGroup');
+window.removeTrigger = function(index) {
+    if (!selectedChain || !selectedChain.triggers) return;
 
-    if (survivorPositionGroup) {
-        survivorPositionGroup.style.display = characterType === 'survivor' ? 'block' : 'none';
+    selectedChain.triggers.splice(index, 1);
+    displayTriggers(selectedChain.triggers);
+};
+
+window.addStopCondition = function() {
+    if (!selectedChain) return;
+
+    const conditionType = document.getElementById('newStopConditionSelect').value;
+    if (!conditionType) return;
+
+    const condition = { type: conditionType };
+
+    // Handle time delay
+    if (conditionType === 'time_delay') {
+        const delayInput = document.getElementById('newStopConditionDelaySlider');
+        condition.delay = delayInput ? parseInt(delayInput.value) : 0;
+    }
+
+    // Ensure stopConditions array exists
+    if (!selectedChain.stopConditions) selectedChain.stopConditions = [];
+
+    selectedChain.stopConditions.push(condition);
+    displayStopConditions(selectedChain.stopConditions);
+
+    // Reset selection
+    document.getElementById('newStopConditionSelect').value = '';
+    document.getElementById('newStopConditionOptions').innerHTML = '';
+};
+
+window.removeStopCondition = function(index) {
+    if (!selectedChain || !selectedChain.stopConditions) return;
+
+    selectedChain.stopConditions.splice(index, 1);
+    displayStopConditions(selectedChain.stopConditions);
+};
+
+// Handle trigger selection change (no options needed for triggers)
+window.handleNewTriggerChange = function() {
+    // Triggers don't have additional options anymore
+};
+
+// Handle stop condition selection change to show delay options
+window.handleNewStopConditionChange = function() {
+    const conditionType = document.getElementById('newStopConditionSelect').value;
+    const optionsEl = document.getElementById('newStopConditionOptions');
+
+    if (conditionType === 'time_delay') {
+        optionsEl.innerHTML = `
+            <div class="slider-group">
+                <label>Duration (ms): <span id="newStopConditionDelayValue">0</span></label>
+                <input type="range" id="newStopConditionDelaySlider" min="0" max="60000" step="100" value="0" oninput="updateNewStopConditionDelay()">
+            </div>
+        `;
+    } else {
+        optionsEl.innerHTML = '';
     }
 };
 
-window.updateTriggerDelay = function() {
-    const value = parseInt(document.getElementById('triggerDelaySlider').value);
-    document.getElementById('triggerDelayValue').textContent = value;
+window.updateNewStopConditionDelay = function() {
+    const value = parseInt(document.getElementById('newStopConditionDelaySlider').value);
+    document.getElementById('newStopConditionDelayValue').textContent = value;
 };
 
 window.saveChain = function() {
@@ -1186,28 +1392,24 @@ window.saveChain = function() {
         return;
     }
 
-    // Get trigger data
-    const triggerType = document.getElementById('triggerType').value;
-    const trigger = { type: triggerType, characterName: null, characterType: null, survivorPosition: null, delay: 0 };
+    // Get loop setting
+    const loop = document.getElementById('loopCheckbox').checked;
 
-    if (triggerType === 'character_load' || triggerType === 'character_unload') {
-        const characterType = document.getElementById('characterTypeSelect')?.value || null;
-        const survivorPosition = document.getElementById('survivorPositionSelect')?.value || null;
-        trigger.characterType = characterType || null;
-        trigger.survivorPosition = survivorPosition || null;
-    } else if (triggerType === 'time_delay') {
-        trigger.delay = parseInt(document.getElementById('triggerDelaySlider')?.value || 0);
-    }
+    // Ensure triggers and stopConditions arrays exist
+    if (!selectedChain.triggers) selectedChain.triggers = [];
+    if (!selectedChain.stopConditions) selectedChain.stopConditions = [];
 
     // Update chain
     updateChain(selectedObjectName, selectedChain.id, {
         name: chainName,
-        trigger
+        triggers: selectedChain.triggers,
+        loop,
+        stopConditions: selectedChain.stopConditions
     });
 
     // Refresh UI
     loadObjectChains(selectedObjectName);
-    alert('Animation saved successfully');
+    // alert('Animation saved successfully');
 };
 
 window.deleteChain = function() {
@@ -1219,6 +1421,41 @@ window.deleteChain = function() {
     hideChainEditor();
     hideKeyframeEditor();
     loadObjectChains(selectedObjectName);
+};
+
+// Edit chain from card
+window.editChainFromCard = function(objectName, chainId) {
+    // Ensure the correct object is selected first
+    if (selectedObjectName !== objectName) {
+        selectObject(objectName);
+    }
+
+    // Now get the chain data (after object is selected)
+    const chains = getChainsForObject(objectName);
+    const chain = chains.find(c => c.id === chainId);
+    if (chain) {
+        selectChain(chain);
+    }
+};
+
+// Delete chain from card (without needing to select it first)
+window.deleteChainFromCard = function(objectName, chainId) {
+    const chains = getChainsForObject(objectName);
+    const chain = chains.find(c => c.id === chainId);
+    if (!chain) return;
+
+    if (!confirm(`Delete animation "${chain.name}"?`)) return;
+
+    deleteChain(objectName, chainId);
+
+    // If the deleted chain was selected, clear selection
+    if (selectedChain && selectedChain.id === chainId) {
+        hideChainEditor();
+        hideKeyframeEditor();
+        selectedChain = null;
+    }
+
+    loadObjectChains(objectName);
 };
 
 window.addKeyframe = function() {
@@ -1359,11 +1596,10 @@ window.updateKeyframeProperties = function() {
         document.getElementById('kfFovValue').textContent = fov.toFixed(0);
         properties.fov = fov;
     } else if (selectedObjectData.type === 'light') {
-        const intensity = parseFloat(document.getElementById('kfIntensitySlider').value);
+        const intensity = parseFloat(document.getElementById('kfIntensityInput').value);
         const colorHex = document.getElementById('kfLightColor').value.replace('#', '');
         const color = parseInt(colorHex, 16);
 
-        document.getElementById('kfIntensityValue').textContent = intensity.toFixed(1);
         properties.intensity = intensity;
         properties.color = color;
 
@@ -1444,8 +1680,7 @@ window.syncFromObject = function() {
         document.getElementById('kfFovSlider').value = obj.fov;
         document.getElementById('kfFovValue').textContent = obj.fov.toFixed(0);
     } else if (selectedObjectData.type === 'light') {
-        document.getElementById('kfIntensitySlider').value = obj.intensity;
-        document.getElementById('kfIntensityValue').textContent = obj.intensity.toFixed(1);
+        document.getElementById('kfIntensityInput').value = obj.intensity.toFixed(1);
         document.getElementById('kfLightColor').value = '#' + obj.color.getHex().toString(16).padStart(6, '0');
 
         if (obj.isSpotLight) {
@@ -1454,6 +1689,90 @@ window.syncFromObject = function() {
             document.getElementById('kfSpotAngleValue').textContent = angleDeg.toFixed(0);
             document.getElementById('kfSpotPenumbraSlider').value = obj.penumbra;
             document.getElementById('kfSpotPenumbraValue').textContent = obj.penumbra.toFixed(2);
+        }
+    }
+
+    // Trigger auto-save
+    window.updateKeyframeProperties();
+};
+
+window.resetToStaticPosition = function() {
+    if (!selectedObjectName || !selectedChain || !selectedKeyframe) return;
+
+    // Get static properties from saved animation data
+    const objects = getAllAnimatableObjects();
+    const objectData = objects[selectedObjectName];
+
+    if (!objectData || !objectData.properties) return;
+
+    const staticProps = objectData.properties;
+
+    // Load static properties into keyframe input fields
+    document.getElementById('kfPosX').value = staticProps.position.x.toFixed(2);
+    document.getElementById('kfPosY').value = staticProps.position.y.toFixed(2);
+    document.getElementById('kfPosZ').value = staticProps.position.z.toFixed(2);
+
+    document.getElementById('kfRotX').value = (staticProps.rotation.x * 180 / Math.PI).toFixed(1);
+    document.getElementById('kfRotY').value = (staticProps.rotation.y * 180 / Math.PI).toFixed(1);
+    document.getElementById('kfRotZ').value = (staticProps.rotation.z * 180 / Math.PI).toFixed(1);
+
+    // Load type-specific static properties
+    if (selectedObjectData.type === 'camera' && staticProps.fov !== undefined) {
+        document.getElementById('kfFovSlider').value = staticProps.fov;
+        document.getElementById('kfFovValue').textContent = staticProps.fov.toFixed(0);
+    } else if (selectedObjectData.type === 'light') {
+        if (staticProps.intensity !== undefined) {
+            document.getElementById('kfIntensityInput').value = staticProps.intensity.toFixed(1);
+        }
+        if (staticProps.color !== undefined) {
+            document.getElementById('kfLightColor').value = '#' + staticProps.color.toString(16).padStart(6, '0');
+        }
+
+        if (objectData.lightType === 'spot') {
+            if (staticProps.angle !== undefined) {
+                const angleDeg = THREE.MathUtils.radToDeg(staticProps.angle);
+                document.getElementById('kfSpotAngleSlider').value = angleDeg;
+                document.getElementById('kfSpotAngleValue').textContent = angleDeg.toFixed(0);
+            }
+            if (staticProps.penumbra !== undefined) {
+                document.getElementById('kfSpotPenumbraSlider').value = staticProps.penumbra;
+                document.getElementById('kfSpotPenumbraValue').textContent = staticProps.penumbra.toFixed(2);
+            }
+        }
+    }
+
+    // Update the object visually to match static position
+    let obj;
+    if (selectedObjectData.type === 'camera') {
+        obj = camera;
+    } else if (selectedObjectData.type === 'light') {
+        obj = getSceneLight(selectedObjectName);
+    }
+
+    if (obj) {
+        obj.position.set(staticProps.position.x, staticProps.position.y, staticProps.position.z);
+        obj.rotation.set(staticProps.rotation.x, staticProps.rotation.y, staticProps.rotation.z);
+
+        if (selectedObjectData.type === 'camera' && staticProps.fov !== undefined) {
+            obj.fov = staticProps.fov;
+            obj.updateProjectionMatrix();
+        } else if (selectedObjectData.type === 'light') {
+            if (staticProps.intensity !== undefined) {
+                obj.intensity = staticProps.intensity;
+            }
+            if (staticProps.color !== undefined) {
+                obj.color.setHex(staticProps.color);
+            }
+            if (obj.isSpotLight) {
+                if (staticProps.angle !== undefined) {
+                    obj.angle = staticProps.angle;
+                }
+                if (staticProps.penumbra !== undefined) {
+                    obj.penumbra = staticProps.penumbra;
+                }
+                updateSpotlightTarget(obj);
+            }
+            if (obj.userData.helper) obj.userData.helper.update();
         }
     }
 
@@ -1519,4 +1838,146 @@ function switchToTab(tabName) {
 
 window.switchObjectTab = function(tabName) {
     switchToTab(tabName);
+};
+
+// Adopt viewport camera position/rotation to static properties
+window.adoptViewportCamera = function() {
+    if (!selectedObjectName || selectedObjectData?.type !== 'camera') {
+        console.warn('Can only adopt viewport camera when Camera is selected');
+        return;
+    }
+
+    if (!viewportCamera) {
+        console.error('Viewport camera not available');
+        return;
+    }
+
+    // Copy viewport camera position and rotation to animatable camera
+    camera.position.copy(viewportCamera.position);
+    camera.rotation.copy(viewportCamera.rotation);
+
+    // Update input fields
+    document.getElementById('posX').value = camera.position.x.toFixed(2);
+    document.getElementById('posY').value = camera.position.y.toFixed(2);
+    document.getElementById('posZ').value = camera.position.z.toFixed(2);
+
+    document.getElementById('rotX').value = (camera.rotation.x * 180 / Math.PI).toFixed(1);
+    document.getElementById('rotY').value = (camera.rotation.y * 180 / Math.PI).toFixed(1);
+    document.getElementById('rotZ').value = (camera.rotation.z * 180 / Math.PI).toFixed(1);
+
+    // Trigger save
+    window.updateCameraTransform();
+
+    console.log('Adopted viewport camera position and rotation');
+};
+
+// Adopt viewport camera position/rotation to keyframe properties
+window.adoptViewportCameraToKeyframe = function() {
+    if (!selectedObjectName || !selectedChain || !selectedKeyframe) {
+        console.warn('No keyframe selected');
+        return;
+    }
+
+    if (selectedObjectData?.type !== 'camera') {
+        console.warn('Can only adopt viewport camera for camera keyframes');
+        return;
+    }
+
+    if (!viewportCamera) {
+        console.error('Viewport camera not available');
+        return;
+    }
+
+    // Copy viewport camera position and rotation to animatable camera
+    camera.position.copy(viewportCamera.position);
+    camera.rotation.copy(viewportCamera.rotation);
+
+    // Update keyframe input fields
+    document.getElementById('kfPosX').value = camera.position.x.toFixed(2);
+    document.getElementById('kfPosY').value = camera.position.y.toFixed(2);
+    document.getElementById('kfPosZ').value = camera.position.z.toFixed(2);
+
+    document.getElementById('kfRotX').value = (camera.rotation.x * 180 / Math.PI).toFixed(1);
+    document.getElementById('kfRotY').value = (camera.rotation.y * 180 / Math.PI).toFixed(1);
+    document.getElementById('kfRotZ').value = (camera.rotation.z * 180 / Math.PI).toFixed(1);
+
+    // Trigger auto-save
+    window.updateKeyframeProperties();
+
+    console.log('Adopted viewport camera position and rotation to keyframe');
+};
+
+// Set viewport camera to match animatable camera (static properties)
+window.viewFromCamera = function() {
+    if (!selectedObjectName || selectedObjectData?.type !== 'camera') {
+        console.warn('Can only view from camera when Camera is selected');
+        return;
+    }
+
+    if (!viewportCamera) {
+        console.error('Viewport camera not available');
+        return;
+    }
+
+    // Get world position and quaternion from animatable camera
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    camera.getWorldPosition(worldPos);
+    camera.getWorldQuaternion(worldQuat);
+
+    // Apply to viewport camera
+    viewportCamera.position.copy(worldPos);
+    viewportCamera.quaternion.copy(worldQuat);
+    viewportCamera.updateProjectionMatrix();
+
+    // Update orbit controls target to point where camera is looking
+    if (controls) {
+        const direction = new THREE.Vector3(0, 0, -1);
+        direction.applyQuaternion(worldQuat);
+        const target = worldPos.clone().add(direction.multiplyScalar(5));
+        controls.target.copy(target);
+        controls.update();
+    }
+
+    console.log('Viewport camera set to match animatable camera at world position:', worldPos);
+};
+
+// Set viewport camera to match keyframe camera position
+window.viewFromCameraKeyframe = function() {
+    if (!selectedObjectName || !selectedChain || !selectedKeyframe) {
+        console.warn('No keyframe selected');
+        return;
+    }
+
+    if (selectedObjectData?.type !== 'camera') {
+        console.warn('Can only view from camera for camera keyframes');
+        return;
+    }
+
+    if (!viewportCamera) {
+        console.error('Viewport camera not available');
+        return;
+    }
+
+    // Get world position and quaternion from animatable camera (which is at keyframe position)
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    camera.getWorldPosition(worldPos);
+    camera.getWorldQuaternion(worldQuat);
+
+    // Apply to viewport camera
+    viewportCamera.position.copy(worldPos);
+    viewportCamera.quaternion.copy(worldQuat);
+    viewportCamera.updateProjectionMatrix();
+
+    // Update orbit controls target to point where camera is looking
+    if (controls) {
+        const direction = new THREE.Vector3(0, 0, -1);
+        direction.applyQuaternion(worldQuat);
+        const target = worldPos.clone().add(direction.multiplyScalar(5));
+        controls.target.copy(target);
+        controls.update();
+    }
+
+    console.log('Viewport camera set to match keyframe camera position:', worldPos);
 };

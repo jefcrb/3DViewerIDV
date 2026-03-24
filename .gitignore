@@ -4,3 +4,5 @@ plan/
 wwwroot/assets/scene.glb
 wwwroot/viewer_settings.json
 wwwroot/keyframe_animations.json
+wwwroot/hunters
+wwwroot/survivors

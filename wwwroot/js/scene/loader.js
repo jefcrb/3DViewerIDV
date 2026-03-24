@@ -158,6 +158,9 @@ export function loadBlenderScene(scene, camera) {
                     console.log(`Found and configured ${lightCount} light(s) from Blender`);
                 }
 
+                console.log('Checking for cameras in GLTF...');
+                console.log('gltf.cameras:', gltf.cameras);
+
                 if (gltf.cameras && gltf.cameras.length > 0) {
                     const blenderCamera = gltf.cameras[0];
                     camera.position.copy(blenderCamera.position);
@@ -167,6 +170,7 @@ export function loadBlenderScene(scene, camera) {
 
                     // Add the Blender camera to the scene so it can be animated
                     // Find the camera in the scene hierarchy and add helper
+                    let foundCamera = false;
                     gltf.scene.traverse((child) => {
                         if (child.isCamera) {
                             if (!child.name || child.name.trim() === '') {
@@ -175,6 +179,7 @@ export function loadBlenderScene(scene, camera) {
 
                             // Store reference to the Blender camera for animation system
                             state.blenderCamera = child;
+                            foundCamera = true;
 
                             // Add a CameraHelper to visualize the camera frustum
                             const cameraHelper = new THREE.CameraHelper(child);
@@ -184,6 +189,29 @@ export function loadBlenderScene(scene, camera) {
                             console.log(`Found camera in scene: ${child.name} (FOV: ${child.fov}°, Aspect: ${child.aspect.toFixed(2)})`);
                         }
                     });
+
+                    if (!foundCamera) {
+                        console.warn('gltf.cameras exists but no camera found in scene hierarchy!');
+                    }
+                } else {
+                    console.warn('No cameras found in GLTF file - creating a separate animatable camera');
+
+                    // Create a new camera for animations (separate from viewport camera)
+                    const animatableCamera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+                    animatableCamera.name = 'BlenderCamera';
+                    animatableCamera.position.copy(camera.position);
+                    animatableCamera.rotation.copy(camera.rotation);
+
+                    // Add to scene
+                    gltf.scene.add(animatableCamera);
+                    state.blenderCamera = animatableCamera;
+
+                    // Add CameraHelper
+                    const cameraHelper = new THREE.CameraHelper(animatableCamera);
+                    cameraHelper.visible = false;
+                    scene.add(cameraHelper);
+
+                    console.log('Created animatable camera at viewport position');
                 }
 
                 state.dummyModels = findDummyModels(gltf.scene);

@@ -637,6 +637,8 @@ html, body {
     font-size: 10px;
 }
 
+
+
 /* Buttons */
 #keyframePanel button:not(.tab-button):not(.icon-button) {
     width: calc(100% - 24px);
@@ -698,6 +700,12 @@ html, body {
     transition: all 0.15s;
 }
 
+#cameraButton {
+    height: 34px;
+    background: #383838;
+    text-align: center;
+}
+
 .add-button:hover {
     background: #4a4a4a;
     border-color: #7b61ff;
@@ -715,12 +723,13 @@ html, body {
 }
 
 .chain-item {
-    padding: 8px;
+    position: relative;
+    padding: 10px;
+    padding-right: 40px;
     margin-bottom: 6px;
     background: #1e1e1e;
     border: 1px solid #3c3c3c;
     border-radius: 4px;
-    cursor: pointer;
     font-size: 11px;
     transition: all 0.15s;
 }
@@ -738,21 +747,54 @@ html, body {
 .chain-name {
     font-weight: 600;
     color: #e5e5e5;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 
 .chain-info {
     font-size: 10px;
     color: #888;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
-.chain-item button {
-    width: 100%;
-    margin: 0;
-    margin-top: 6px;
-    padding: 4px 8px;
-    font-size: 10px;
+.chain-delete-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 4px !important;
+    background: #3c2c2c !important;
+    border: 1px solid #5c3c3c !important;
+    color: #ff6b6b !important;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin: 0 !important;
+    width: 24px !important;
+    height: 24px !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+}
+
+.chain-delete-btn:hover {
+    background: #5c2c2c !important;
+    border-color: #8c3c3c !important;
+    color: #ff8787 !important;
+}
+
+.chain-delete-btn svg {
+    display: block;
+}
+
+.chain-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.chain-buttons button {
+    flex: 1;
+    margin: 0 !important;
+    padding: 5px 8px !important;
+    font-size: 10px !important;
 }
 
 /* Keyframe List */

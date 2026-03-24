@@ -147,13 +147,9 @@ export function createChain(objectName, chainName = 'New Animation') {
     const newChain = {
         id: chainId,
         name: chainName,
-        trigger: {
-            type: 'manual',
-            characterName: null,
-            characterType: null,
-            survivorPosition: null,
-            delay: 0
-        },
+        triggers: [],
+        loop: false,
+        stopConditions: [],
         keyframes: []
     };
 

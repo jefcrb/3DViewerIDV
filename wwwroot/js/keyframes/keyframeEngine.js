@@ -65,7 +65,8 @@ export class AnimationPlayer {
             keyframeStartTime: null,
             chainStartTime: performance.now(),
             isWaitingForDelay: true,
-            startState: this.captureObjectState(threeObject, objectData.type)
+            startState: this.captureObjectState(threeObject, objectData.type),
+            stopConditionStartTime: null  // Track time for stop condition time_delay
         };
 
         this.activeAnimations.set(objectName, instance);
@@ -104,13 +105,33 @@ export class AnimationPlayer {
 
     updateAnimation(instance, objectName) {
         const now = performance.now();
+
+        // Check stop condition
+        if (this.shouldStopAnimation(instance, now)) {
+            this.stopAnimation(objectName);
+            console.log(`Animation "${instance.chain.name}" on "${objectName}" stopped by stop condition`);
+            return;
+        }
+
         const keyframe = instance.chain.keyframes[instance.currentKeyframeIndex];
 
         if (!keyframe) {
             // Chain complete
-            this.stopAnimation(objectName);
-            console.log(`Animation "${instance.chain.name}" on "${objectName}" completed`);
-            return;
+            if (instance.chain.loop) {
+                // Loop back to start
+                console.log(`Animation "${instance.chain.name}" on "${objectName}" looping`);
+                instance.currentKeyframeIndex = 0;
+                instance.isWaitingForDelay = true;
+                instance.keyframeStartTime = null;
+                // Reset start state to current object state for smooth looping
+                instance.startState = this.captureObjectState(instance.object, instance.objectType);
+                return;
+            } else {
+                // Stop animation
+                this.stopAnimation(objectName);
+                console.log(`Animation "${instance.chain.name}" on "${objectName}" completed`);
+                return;
+            }
         }
 
         // Handle delay before keyframe starts
@@ -172,6 +193,59 @@ export class AnimationPlayer {
         }
     }
 
+    shouldStopAnimation(instance, now) {
+        // Migrate old format if needed
+        if (instance.chain.stopCondition && !Array.isArray(instance.chain.stopConditions)) {
+            instance.chain.stopConditions = [this.convertOldStopConditionFormat(instance.chain.stopCondition)];
+        }
+        if (!instance.chain.stopConditions) return false;
+
+        // Check each stop condition
+        for (const stopCondition of instance.chain.stopConditions) {
+            if (!stopCondition || stopCondition.type === 'none') {
+                continue;
+            }
+
+            // Time delay stop condition
+            if (stopCondition.type === 'time_delay') {
+                if (!instance.stopConditionStartTime) {
+                    instance.stopConditionStartTime = now;
+                }
+                const elapsed = now - instance.stopConditionStartTime;
+                if (elapsed >= stopCondition.delay) {
+                    return true;
+                }
+            }
+
+            // Character-based stop conditions are checked by the trigger system
+            // They will call stopAnimation directly when the condition is met
+        }
+
+        return false;
+    }
+
+    convertOldStopConditionFormat(oldCondition) {
+        let type = oldCondition.type;
+
+        if (type === 'character_load' || type === 'character_unload') {
+            if (oldCondition.characterType === 'hunter') {
+                type = `${type}_hunter`;
+            } else if (oldCondition.characterType === 'survivor') {
+                if (oldCondition.survivorPosition) {
+                    type = `${type}_survivor_${oldCondition.survivorPosition}`;
+                } else {
+                    type = `${type}_survivor`;
+                }
+            }
+        }
+
+        const newCondition = { type };
+        if (type === 'time_delay') {
+            newCondition.delay = oldCondition.delay || 0;
+        }
+        return newCondition;
+    }
+
     extractStateFromKeyframe(keyframe, objectType) {
         const state = {
             position: new THREE.Vector3(
@@ -199,13 +273,24 @@ export class AnimationPlayer {
     }
 
     interpolatePosition(object, keyframe, startState, eased) {
-        if (keyframe.properties.position) {
-            const targetPos = new THREE.Vector3(
-                keyframe.properties.position.x,
-                keyframe.properties.position.y,
-                keyframe.properties.position.z
-            );
-            object.position.lerpVectors(startState.position, targetPos, eased);
+        if (!keyframe.properties.position) return;
+
+        const enabledProps = keyframe.properties.enabledProps || {};
+        const targetPos = new THREE.Vector3(
+            keyframe.properties.position.x,
+            keyframe.properties.position.y,
+            keyframe.properties.position.z
+        );
+
+        // Interpolate only enabled axes
+        if (enabledProps['position.x'] !== false) {
+            object.position.x = startState.position.x + (targetPos.x - startState.position.x) * eased;
+        }
+        if (enabledProps['position.y'] !== false) {
+            object.position.y = startState.position.y + (targetPos.y - startState.position.y) * eased;
+        }
+        if (enabledProps['position.z'] !== false) {
+            object.position.z = startState.position.z + (targetPos.z - startState.position.z) * eased;
         }
     }
 
@@ -299,6 +384,9 @@ export class TriggerManager {
 
     // Register character load trigger
     setupCharacterLoadTrigger() {
+        // Trigger all "on_load" animations immediately
+        this.triggerOnLoadAnimations();
+
         // Hook into existing character loading system
         if (typeof window.loadCharactersJson === 'function') {
             const originalLoadCharacters = window.loadCharactersJson;
@@ -315,6 +403,40 @@ export class TriggerManager {
             console.log('Animation character load/unload trigger registered');
         } else {
             console.warn('window.loadCharactersJson not found, character load triggers will not work');
+        }
+    }
+
+    // Trigger all animations with "on_load" trigger
+    triggerOnLoadAnimations() {
+        if (!this.player.animationData || !this.player.animationData.animatableObjects) {
+            console.log('[On Load] No animation data available');
+            return;
+        }
+
+        const objects = this.player.animationData.animatableObjects || {};
+        let triggeredCount = 0;
+
+        Object.entries(objects).forEach(([objectName, objectData]) => {
+            objectData.chains.forEach(chain => {
+                // Migrate old format if needed
+                if (chain.trigger && !Array.isArray(chain.triggers)) {
+                    chain.triggers = [this.convertOldTriggerFormat(chain.trigger)];
+                }
+                if (!chain.triggers) chain.triggers = [];
+
+                // Check if chain has on_load trigger
+                const hasOnLoadTrigger = chain.triggers.some(trigger => trigger.type === 'on_load');
+
+                if (hasOnLoadTrigger) {
+                    console.log(`[On Load] Triggering animation "${chain.name}" on "${objectName}"`);
+                    this.player.playChain(objectName, chain.id);
+                    triggeredCount++;
+                }
+            });
+        });
+
+        if (triggeredCount > 0) {
+            console.log(`[On Load] Triggered ${triggeredCount} animation(s)`);
         }
     }
 
@@ -344,12 +466,35 @@ export class TriggerManager {
         // Process all animation chains
         Object.entries(objects).forEach(([objectName, objectData]) => {
             objectData.chains.forEach(chain => {
-                const triggerType = chain.trigger.type;
+                // Migrate old format to new if needed
+                if (chain.trigger && !Array.isArray(chain.triggers)) {
+                    chain.triggers = [this.convertOldTriggerFormat(chain.trigger)];
+                }
+                if (!chain.triggers) chain.triggers = [];
 
-                if (triggerType === 'character_load') {
-                    this.checkLoadTrigger(chain, objectName, currentState);
-                } else if (triggerType === 'character_unload') {
-                    this.checkUnloadTrigger(chain, objectName, currentState);
+                // Check each trigger
+                chain.triggers.forEach(trigger => {
+                    if (this.checkTrigger(trigger, currentState)) {
+                        console.log(`[Trigger] ✓ Triggering animation "${chain.name}" on "${objectName}"`);
+                        this.player.playChain(objectName, chain.id);
+                    }
+                });
+            });
+        });
+
+        // Check stop conditions for running animations
+        this.activeAnimations.forEach((instance, objectName) => {
+            // Migrate old format to new if needed
+            if (instance.chain.stopCondition && !Array.isArray(instance.chain.stopConditions)) {
+                instance.chain.stopConditions = [this.convertOldStopConditionFormat(instance.chain.stopCondition)];
+            }
+            if (!instance.chain.stopConditions) instance.chain.stopConditions = [];
+
+            // Check each stop condition
+            instance.chain.stopConditions.forEach(condition => {
+                if (this.checkStopCondition(condition, currentState)) {
+                    console.log(`[Stop Condition] Stopping animation "${instance.chain.name}" on "${objectName}"`);
+                    this.player.stopAnimation(objectName);
                 }
             });
         });
@@ -358,122 +503,108 @@ export class TriggerManager {
         this.previousState = JSON.parse(JSON.stringify(currentState));
     }
 
-    checkLoadTrigger(chain, objectName, currentState) {
-        let shouldTrigger = false;
-        let triggerDesc = 'character load';
+    convertOldTriggerFormat(oldTrigger) {
+        let type = oldTrigger.type;
 
-        if (chain.trigger.characterType === 'hunter') {
-            // Check if hunter was just loaded (wasn't there before, is there now)
-            const wasLoaded = this.previousState.hunter !== null;
-            const isLoaded = currentState.hunter !== null;
-
-            if (!wasLoaded && isLoaded) {
-                shouldTrigger = true;
-                triggerDesc = 'Hunter load';
-            }
-        } else if (chain.trigger.characterType === 'survivor') {
-            // Check if specific survivor position is set
-            if (chain.trigger.survivorPosition) {
-                const position = parseInt(chain.trigger.survivorPosition) - 1; // Convert 1-4 to 0-3
-
-                const wasSurvivorLoaded = this.previousState.survivors[position] !== null;
-                const isSurvivorLoaded = currentState.survivors[position] !== null;
-
-                console.log(`[Trigger] Checking Survivor position ${position + 1}: was=${wasSurvivorLoaded}, is=${isSurvivorLoaded}`);
-
-                if (!wasSurvivorLoaded && isSurvivorLoaded) {
-                    shouldTrigger = true;
-                    triggerDesc = `Survivor ${chain.trigger.survivorPosition} load`;
+        if (type === 'character_load' || type === 'character_unload') {
+            if (oldTrigger.characterType === 'hunter') {
+                type = `${type}_hunter`;
+            } else if (oldTrigger.characterType === 'survivor') {
+                if (oldTrigger.survivorPosition) {
+                    type = `${type}_survivor_${oldTrigger.survivorPosition}`;
+                } else {
+                    type = `${type}_survivor`;
                 }
-            } else {
-                // No position specified - check if any survivor was just loaded
-                for (let i = 0; i < 4; i++) {
-                    const wasSurvivorLoaded = this.previousState.survivors[i] !== null;
-                    const isSurvivorLoaded = currentState.survivors[i] !== null;
-
-                    if (!wasSurvivorLoaded && isSurvivorLoaded) {
-                        shouldTrigger = true;
-                        triggerDesc = `Any Survivor load (position ${i + 1})`;
-                        break;
-                    }
-                }
-            }
-        } else if (!chain.trigger.characterType) {
-            // No specific character type - trigger on any load
-            const hunterChanged = this.previousState.hunter === null && currentState.hunter !== null;
-            const anyNewSurvivor = currentState.survivors.some((s, i) =>
-                this.previousState.survivors[i] === null && s !== null
-            );
-
-            if (hunterChanged || anyNewSurvivor) {
-                shouldTrigger = true;
-                triggerDesc = 'Any character load';
             }
         }
 
-        if (shouldTrigger) {
-            console.log(`[Trigger] ✓ Triggering animation "${chain.name}" on "${objectName}" from ${triggerDesc}`);
-            this.player.playChain(objectName, chain.id);
+        const newTrigger = { type };
+        if (type === 'time_delay') {
+            newTrigger.delay = oldTrigger.delay || 0;
         }
+        return newTrigger;
     }
 
-    checkUnloadTrigger(chain, objectName, currentState) {
-        let shouldTrigger = false;
-        let triggerDesc = 'character unload';
+    convertOldStopConditionFormat(oldCondition) {
+        let type = oldCondition.type;
 
-        if (chain.trigger.characterType === 'hunter') {
-            // Check if hunter was just unloaded (was there before, not there now)
-            const wasLoaded = this.previousState.hunter !== null;
-            const isLoaded = currentState.hunter !== null;
-
-            if (wasLoaded && !isLoaded) {
-                shouldTrigger = true;
-                triggerDesc = 'Hunter unload';
-            }
-        } else if (chain.trigger.characterType === 'survivor') {
-            // Check if specific survivor position is set
-            if (chain.trigger.survivorPosition) {
-                const position = parseInt(chain.trigger.survivorPosition) - 1; // Convert 1-4 to 0-3
-
-                const wasSurvivorLoaded = this.previousState.survivors[position] !== null;
-                const isSurvivorLoaded = currentState.survivors[position] !== null;
-
-                console.log(`[Trigger] Checking Survivor position ${position + 1} unload: was=${wasSurvivorLoaded}, is=${isSurvivorLoaded}`);
-
-                if (wasSurvivorLoaded && !isSurvivorLoaded) {
-                    shouldTrigger = true;
-                    triggerDesc = `Survivor ${chain.trigger.survivorPosition} unload`;
+        if (type === 'character_load' || type === 'character_unload') {
+            if (oldCondition.characterType === 'hunter') {
+                type = `${type}_hunter`;
+            } else if (oldCondition.characterType === 'survivor') {
+                if (oldCondition.survivorPosition) {
+                    type = `${type}_survivor_${oldCondition.survivorPosition}`;
+                } else {
+                    type = `${type}_survivor`;
                 }
-            } else {
-                // No position specified - check if any survivor was just unloaded
-                for (let i = 0; i < 4; i++) {
-                    const wasSurvivorLoaded = this.previousState.survivors[i] !== null;
-                    const isSurvivorLoaded = currentState.survivors[i] !== null;
+            }
+        }
 
-                    if (wasSurvivorLoaded && !isSurvivorLoaded) {
-                        shouldTrigger = true;
-                        triggerDesc = `Any Survivor unload (position ${i + 1})`;
-                        break;
+        const newCondition = { type };
+        if (type === 'time_delay') {
+            newCondition.delay = oldCondition.delay || 0;
+        }
+        return newCondition;
+    }
+
+    checkTrigger(trigger, currentState) {
+        const type = trigger.type;
+
+        // Character load triggers
+        if (type.startsWith('character_load')) {
+            if (type === 'character_load') {
+                // Any character load
+                const hunterChanged = this.previousState.hunter === null && currentState.hunter !== null;
+                const anyNewSurvivor = currentState.survivors.some((s, i) =>
+                    this.previousState.survivors[i] === null && s !== null
+                );
+                return hunterChanged || anyNewSurvivor;
+            } else if (type === 'character_load_hunter') {
+                return this.previousState.hunter === null && currentState.hunter !== null;
+            } else if (type === 'character_load_survivor') {
+                // Any survivor load
+                for (let i = 0; i < 4; i++) {
+                    if (this.previousState.survivors[i] === null && currentState.survivors[i] !== null) {
+                        return true;
                     }
                 }
-            }
-        } else if (!chain.trigger.characterType) {
-            // No specific character type - trigger on any unload
-            const hunterChanged = this.previousState.hunter !== null && currentState.hunter === null;
-            const anyRemovedSurvivor = this.previousState.survivors.some((s, i) =>
-                s !== null && currentState.survivors[i] === null
-            );
-
-            if (hunterChanged || anyRemovedSurvivor) {
-                shouldTrigger = true;
-                triggerDesc = 'Any character unload';
+                return false;
+            } else if (type.startsWith('character_load_survivor_')) {
+                const position = parseInt(type.split('_')[3]) - 1;
+                return this.previousState.survivors[position] === null && currentState.survivors[position] !== null;
             }
         }
 
-        if (shouldTrigger) {
-            console.log(`[Trigger] ✓ Triggering animation "${chain.name}" on "${objectName}" from ${triggerDesc}`);
-            this.player.playChain(objectName, chain.id);
+        // Character unload triggers
+        if (type.startsWith('character_unload')) {
+            if (type === 'character_unload') {
+                // Any character unload
+                const hunterChanged = this.previousState.hunter !== null && currentState.hunter === null;
+                const anyRemovedSurvivor = this.previousState.survivors.some((s, i) =>
+                    s !== null && currentState.survivors[i] === null
+                );
+                return hunterChanged || anyRemovedSurvivor;
+            } else if (type === 'character_unload_hunter') {
+                return this.previousState.hunter !== null && currentState.hunter === null;
+            } else if (type === 'character_unload_survivor') {
+                // Any survivor unload
+                for (let i = 0; i < 4; i++) {
+                    if (this.previousState.survivors[i] !== null && currentState.survivors[i] === null) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if (type.startsWith('character_unload_survivor_')) {
+                const position = parseInt(type.split('_')[3]) - 1;
+                return this.previousState.survivors[position] !== null && currentState.survivors[position] === null;
+            }
         }
+
+        return false;
+    }
+
+    checkStopCondition(condition, currentState) {
+        return this.checkTrigger(condition, currentState);
     }
 
     // Manual trigger (from button click)

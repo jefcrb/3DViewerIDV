@@ -91,7 +91,7 @@ function animate(currentTime) {
 
         renderer = await setupRenderer(canvas, rendererType);
         scene = setupScene(renderer);
-        camera = setupCamera();
+        camera = setupCamera(scene);
         controls = setupControls(camera, canvas);
 
         lights = setupStudioLighting(scene);

@@ -1,0 +1,510 @@
+{
+  "hunters": [
+    {
+      "id": 1,
+      "name": "里奥·贝克",
+      "zy": "厂长",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/changzhang/changzhang.gltf?1"
+    },
+    {
+      "id": 2,
+      "name": "裘克",
+      "zy": "小丑",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/xiaochou/xiaochou.gltf?1"
+    },
+    {
+      "id": 3,
+      "name": "班恩·佩雷兹",
+      "zy": "鹿头",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/lutou/lutou.gltf?1"
+    },
+    {
+      "id": 4,
+      "name": "杰克",
+      "zy": "“杰克”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/jk/jieke.gltf?1"
+    },
+    {
+      "id": 5,
+      "name": "瓦尔莱塔",
+      "zy": "蜘蛛",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/zhizhu/zhizhu.gltf?1"
+    },
+    {
+      "id": 6,
+      "name": "美智子",
+      "zy": "红蝶",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/hongdie/h55_butcher_banshee.gltf?1"
+    },
+    {
+      "id": 7,
+      "name": "哈斯塔",
+      "zy": "黄衣之主",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/huangyizhujiao/huanyizhizhu.gltf?1"
+    },
+    {
+      "id": 8,
+      "name": "谢必安/范无咎",
+      "zy": "宿伞之魂",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/heibaiwuchang/h55_wuchang_HB_idle.gltf?1"
+    },
+    {
+      "id": 9,
+      "name": "约瑟夫",
+      "zy": "摄影师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/shexiangshi/h55_Joseph_idle.gltf?1"
+    },
+    {
+      "id": 10,
+      "name": "巴尔克·拉·帕杜拉",
+      "zy": "疯眼",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/fengyan/burke_lv2_idle.gltf?1"
+    },
+    {
+      "id": 11,
+      "name": "伊德海拉",
+      "zy": "梦之女巫",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/mengzhinvwu/h55_yidhra_zt_idle.gltf?1"
+    },
+    {
+      "id": 12,
+      "name": "罗比·怀特",
+      "zy": "爱哭鬼",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/aikugui/h55_boy_idle.gltf?1"
+    },
+    {
+      "id": 13,
+      "name": "卢基诺·迪鲁西",
+      "zy": "孽蜥",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/niexi/h55_lizard_idle.gltf?1"
+    },
+    {
+      "id": 14,
+      "name": "玛丽·安托瓦内特",
+      "zy": "红夫人",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/hongfuren/h55_redqu.gltf?1"
+    },
+    {
+      "id": 15,
+      "name": "邦邦",
+      "zy": "26号守卫",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/26hsw/h55_bon_idle.gltf?1"
+    },
+    {
+      "id": 16,
+      "name": "琼·安",
+      "zy": "“使徒”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/shitu/joan_idle.gltf?1"
+    },
+    {
+      "id": 17,
+      "name": "安东尼奥",
+      "zy": "小提琴家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/tiqinjia/H55_paganini_skin_idle.gltf?1"
+    },
+    {
+      "id": 18,
+      "name": "伽拉泰亚",
+      "zy": "雕刻家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/diaokeshi/diaokeshi.gltf?1"
+    },
+    {
+      "id": 19,
+      "name": "珀西",
+      "zy": "“博士”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/boshi/kexueguairen.gltf?1"
+    },
+    {
+      "id": 20,
+      "name": "威尔三兄弟",
+      "zy": "破轮",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/polun/polun_.gltf?1"
+    },
+    {
+      "id": 21,
+      "name": "格蕾丝",
+      "zy": "渔女",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yunv/h55_yunv_idle.gltf?1"
+    },
+    {
+      "id": 22,
+      "name": "菲利普",
+      "zy": "蜡像师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/laxiangshi/wax_destroy.gltf?1"
+    },
+    {
+      "id": 23,
+      "name": "“奥尔菲斯”",
+      "zy": "“噩梦”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/heizhentan/messager.gltf?1"
+    },
+    {
+      "id": 24,
+      "name": "柯根·尼古拉斯·基奥",
+      "zy": "记录员",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/lady/lady.gltf?1"
+    },
+    {
+      "id": 25,
+      "name": "阿尔瓦·洛伦兹",
+      "zy": "隐士",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yinshi/hermit.gltf?1"
+    },
+    {
+      "id": 26,
+      "name": "伊塔库亚",
+      "zy": "守夜人",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/shouyeren/tufuithaqua.gltf?1"
+    },
+    {
+      "id": 27,
+      "name": "桑格莉娅",
+      "zy": "歌剧演员",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/gejuyanyuan/geju.gltf"
+    },
+    {
+      "id": 28,
+      "name": "诺顿·坎贝尔",
+      "zy": "“愚人金”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yurenjin/KANTAN.gltf"
+    },
+    {
+      "id": 29,
+      "name": "“艾维”",
+      "zy": "时空之影",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/shikongzhiying/skzy.gltf"
+    },
+    {
+      "id": 30,
+      "name": "杰弗里·博纳维塔",
+      "zy": "“跛脚羊”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/bojiaoyang/space.gltf"
+    },
+    {
+      "id": 31,
+      "name": "麦克·莫顿",
+      "zy": "“喧嚣”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/xuanxiao/show_idle_spzaji.gltf"
+    },
+    {
+      "id": 32,
+      "name": "瓦伦蒂娜·雅加·瓦西里耶娃",
+      "zy": "杂货商",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/zahuoshang/idle02.gltf"
+    },
+    {
+      "id": 33,
+      "name": "马库斯·索恩",
+      "zy": "“台球手”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/taiqiushou/show_idle_billy_a03.gltf"
+    },
+    {
+      "id": 34,
+      "name": "梅莉·普林尼",
+      "zy": "“女王蜂”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/nvfengwang/spkunc_idle.gltf"
+    }
+  ],
+  "survivors": [
+    {
+      "id": 1,
+      "name": "艾米丽·黛儿",
+      "zy": "医生",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yiyaoshi/yiyaoshi.gltf?1"
+    },
+    {
+      "id": 2,
+      "name": "弗雷迪·莱利",
+      "zy": "律师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/lvshi/h55_survivor_m_it.gltf?1"
+    },
+    {
+      "id": 3,
+      "name": "克利切·皮尔森",
+      "zy": "“慈善家”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/cishanjia/h55_survivor_m_show_idle_qd.gltf?1"
+    },
+    {
+      "id": 4,
+      "name": "艾玛·伍兹",
+      "zy": "园丁",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yuanding/yuanding.gltf?1"
+    },
+    {
+      "id": 5,
+      "name": "推演替身",
+      "zy": "幸运儿",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/xingyuner/dm65_survivor_bo_idle.gltf?1"
+    },
+    {
+      "id": 6,
+      "name": "库特·弗兰克",
+      "zy": "冒险家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/maoxianjia/h55_survivor_m_show_idle_xcz.gltf?1"
+    },
+    {
+      "id": 7,
+      "name": "奈布·萨贝达",
+      "zy": "佣兵",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/guyongbing/yongbing.gltf?1"
+    },
+    {
+      "id": 8,
+      "name": "瑟维·勒·罗伊",
+      "zy": "魔术师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/moshushi/h55_survivor_m_show_idle.gltf?1"
+    },
+    {
+      "id": 9,
+      "name": "海伦娜·亚当斯",
+      "zy": "盲女",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/mangnv/mangnv.gltf?1"
+    },
+    {
+      "id": 10,
+      "name": "玛尔塔·贝坦菲尔",
+      "zy": "空军",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/kongjun/kongjun.gltf?1"
+    },
+    {
+      "id": 11,
+      "name": "玛格丽莎·泽莱",
+      "zy": "舞女",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/wunv/wunv.gltf?1"
+    },
+    {
+      "id": 12,
+      "name": "威廉·艾利斯",
+      "zy": "前锋",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/qianfeng/qianfeng.gltf?1"
+    },
+    {
+      "id": 13,
+      "name": "特蕾西·列兹尼克",
+      "zy": "机械师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/jixieshi/jixieshi.gltf?1"
+    },
+    {
+      "id": 14,
+      "name": "菲欧娜·吉尔曼",
+      "zy": "祭司",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/jisi/jisi.gltf?1"
+    },
+    {
+      "id": 15,
+      "name": "薇拉·奈尔",
+      "zy": "调香师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/xiangshuishi/h55_survivor_w_xiangshuishi.gltf?1"
+    },
+    {
+      "id": 16,
+      "name": "凯文·阿尤索",
+      "zy": "牛仔",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/niuzai/niuzai.gltf?1"
+    },
+    {
+      "id": 17,
+      "name": "伊莱·克拉克",
+      "zy": "先知",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/zhanpushi/h55_survivor_m_zbs_lv1_niao_idle.gltf?1"
+    },
+    {
+      "id": 18,
+      "name": "伊索·卡尔",
+      "zy": "入殓师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/rulianshi/rulianshi.gltf?1"
+    },
+    {
+      "id": 19,
+      "name": "诺顿·坎贝尔",
+      "zy": "勘探员",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/kantanyuan/h55_survivor_m_kantan.gltf?1"
+    },
+    {
+      "id": 20,
+      "name": "帕缇夏·多里瓦尔",
+      "zy": "咒术师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/zhoushu/h55_survivor_w_zhoushu.gltf?1"
+    },
+    {
+      "id": 21,
+      "name": "穆罗·莫顿",
+      "zy": "野人",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yeren/yerenqishi.gltf?1"
+    },
+    {
+      "id": 22,
+      "name": "麦克·莫顿",
+      "zy": "杂技演员",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/zajiyanyuan/zajiyanyuan.gltf?1"
+    },
+    {
+      "id": 23,
+      "name": "何塞·巴登",
+      "zy": "大副",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/dafu/h55_survivor_m_dafu_idle.gltf?1"
+    },
+    {
+      "id": 24,
+      "name": "黛米·波本",
+      "zy": "调酒师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/tiaojiushi/tiaojiushi.gltf?1"
+    },
+    {
+      "id": 25,
+      "name": "维克多·葛兰兹",
+      "zy": "邮差",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/youchai/h55_survivor_m_yc_show_idle_yc.gltf?1"
+    },
+    {
+      "id": 26,
+      "name": "安德鲁·克雷斯",
+      "zy": "守墓人",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/shoumuren/shoumuren.gltf?1"
+    },
+    {
+      "id": 27,
+      "name": "卢卡·巴尔萨",
+      "zy": "“囚徒”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/qiutu/h55_survivor_m_qiutu.gltf?1"
+    },
+    {
+      "id": 28,
+      "name": "梅莉·普林尼",
+      "zy": "昆虫学者",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/kunchongxuezhe/kunchong.gltf?1"
+    },
+    {
+      "id": 29,
+      "name": "艾格·瓦尔登",
+      "zy": "画家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/huajia/huajia.gltf?1"
+    },
+    {
+      "id": 30,
+      "name": "甘吉·古普塔",
+      "zy": "击球手",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/jiqiushou/h55_survivor_m_jiqiu.gltf?1"
+    },
+    {
+      "id": 31,
+      "name": "安妮·莱斯特",
+      "zy": "玩具商",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/wanjushang/h55_survivor_w_shangren_idle.gltf?1"
+    },
+    {
+      "id": 32,
+      "name": "艾达·梅斯默",
+      "zy": "“心理学家”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/xinlixuejia/xinlixuejia.gltf?1"
+    },
+    {
+      "id": 33,
+      "name": "埃米尔",
+      "zy": "病患",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/binghuan/HuanBing_cp_nan.gltf?1"
+    },
+    {
+      "id": 34,
+      "name": "“奥尔菲斯”",
+      "zy": "小说家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/bzt/baizentan.gltf?1"
+    },
+    {
+      "id": 35,
+      "name": "“回忆”",
+      "zy": "“小女孩”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/xnh/xiaonvhai.gltf?1"
+    },
+    {
+      "id": 36,
+      "name": "裘克",
+      "zy": "哭泣小丑",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/spxiaochou/xiaochou.gltf?1"
+    },
+    {
+      "id": 37,
+      "name": "卢基诺·迪鲁西",
+      "zy": "教授",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/jiaoshou/h55_survivor_m_niexi.gltf?1"
+    },
+    {
+      "id": 38,
+      "name": "戚十一",
+      "zy": "古董商",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/gudongshang/wushuniang.gltf?1"
+    },
+    {
+      "id": 39,
+      "name": "  弗雷德里克·克雷伯格",
+      "zy": "作曲家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yinyuejia/yinyuejia.gltf?1"
+    },
+    {
+      "id": 40,
+      "name": "爱丽丝·德罗斯",
+      "zy": "记者",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/jizhe/jizhe1.gltf"
+    },
+    {
+      "id": 41,
+      "name": "查尔斯·霍尔特",
+      "zy": "飞行家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/feixingjia/feixingjia.gltf"
+    },
+    {
+      "id": 42,
+      "name": "莉莉·巴利尔",
+      "zy": "拉拉队员",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/laladuiyuan/laladui.gltf"
+    },
+    {
+      "id": 43,
+      "name": "马蒂亚斯·切尔宁",
+      "zy": "木偶师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/muoushi/bugoushi.gltf"
+    },
+    {
+      "id": 44,
+      "name": "弗洛里安·布兰德",
+      "zy": "火灾调查员",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/huozaidiaochayuan/xiaofang.gltf"
+    },
+    {
+      "id": 45,
+      "name": "伊芙琳·莫雷",
+      "zy": "“法罗女士”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/faluonvshi/faluo.gltf"
+    },
+    {
+      "id": 46,
+      "name": "理查德·斯特林",
+      "zy": "“骑士”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/duxinqishi/duxinqishi.gltf"
+    },
+    {
+      "id": 47,
+      "name": "温迪·福特",
+      "zy": "气象学家",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/qixiangxuejia/qixiang.gltf"
+    },
+    {
+      "id": 48,
+      "name": "伯伦希尔·危鲁弗",
+      "zy": "弓箭手",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/gongjianshou/gongjianshou.gltf"
+    },
+    {
+      "id": 49,
+      "name": "埃弗隆·怀兹",
+      "zy": "“逃脱大师”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/taotuodashi/show_idle_ttds.gltf"
+    },
+    {
+      "id": 50,
+      "name": "阿曼达·加蒂斯",
+      "zy": "幻灯师",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/huandengshi/hds_idle.gltf"
+    }
+  ]
+}

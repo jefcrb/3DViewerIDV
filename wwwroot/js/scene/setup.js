@@ -44,7 +44,7 @@ export function setupScene(renderer) {
     return scene;
 }
 
-export function setupCamera() {
+export function setupCamera(scene) {
     const camera = new THREE.PerspectiveCamera(
         50,
         window.innerWidth / window.innerHeight,
@@ -53,6 +53,12 @@ export function setupCamera() {
     );
     camera.position.set(8, 6, 8);
     camera.lookAt(0, 1, 0);
+    camera.name = 'ViewportCamera';
+
+    // Add camera to scene so TransformControls can attach to it
+    if (scene) {
+        scene.add(camera);
+    }
 
     return camera;
 }

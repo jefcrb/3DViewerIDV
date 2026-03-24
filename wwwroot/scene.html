@@ -178,16 +178,17 @@
 
     <!-- Keyframe Animation Panel -->
     <div id="keyframePanel">
-        <h3>KEYFRAME ANIMATOR</h3>
+        <h3>ANIMATOR</h3>
 
         <!-- Animatable Objects -->
-        <h4>CAMERA</h4>
+        <h4></h4>
         <button onclick="selectObject('Camera')" id="cameraButton" class="object-button">
             Camera
         </button>
 
         <hr>
 
+        <!--
         <h4>LIGHTS</h4>
         <div class="object-list" id="lightList">
             <p class="empty-state">No lights added</p>
@@ -196,7 +197,7 @@
         <button onclick="showAddLightDialog()" class="add-button">+ Add Light</button>
 
         <hr>
-
+ -->
         <!-- Selected Object Info -->
         <h4>SELECTED OBJECT</h4>
         <div id="selectedInfo">
@@ -234,11 +235,11 @@
                 <!-- Camera Properties -->
                 <div id="cameraProperties" style="display: none;">
                     <!-- Transform Controls for Camera -->
-                    <h4>TRANSFORM</h4>
+                    <!--<h4>TRANSFORM</h4>
                     <div class="button-group">
                         <button onclick="setTransformMode('translate')" class="small">Move</button>
                         <button onclick="setTransformMode('rotate')" class="small">Rotate</button>
-                    </div>
+                    </div>-->
 
                     <div class="vector-input-group">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
@@ -263,7 +264,7 @@
 
                     <div class="vector-input-group">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                            <label style="margin-bottom: 0;">Rotation (deg)</label>
+                            <label style="margin-bottom: 0;">Rotation</label>
                             <button onclick="setTransformMode('rotate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Rotate Mode">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M21.5 2v6h-6"></path>
@@ -285,6 +286,11 @@
                     <div class="slider-group">
                         <label>FOV: <span id="cameraFovValue">50</span>°</label>
                         <input type="range" id="cameraFovSlider" min="20" max="120" step="1" value="50" oninput="updateCameraFov()">
+                    </div>
+
+                    <div style="display: flex; gap: 8px; margin-top: 10px;">
+                        <button onclick="adoptViewportCamera()" class="primary" style="flex: 1;">Adopt Viewport Camera</button>
+                        <button onclick="viewFromCamera()" class="secondary" style="flex: 1;">View from Camera</button>
                     </div>
                 </div>
 
@@ -336,7 +342,7 @@
 
                     <div class="vector-input-group">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                            <label style="margin-bottom: 0;">Rotation (deg)</label>
+                            <label style="margin-bottom: 0;">Rotation</label>
                             <button onclick="setTransformMode('rotate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Rotate Mode">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M21.5 2v6h-6"></path>
@@ -355,9 +361,9 @@
 
                     <hr>
 
-                    <div class="slider-group">
-                        <label>Intensity: <span id="lightIntensityValue">1.0</span></label>
-                        <input type="range" id="lightIntensitySlider" min="0" max="10" step="0.1" value="1" oninput="updateLightIntensity()">
+                    <div class="text-input-group">
+                        <label>Intensity</label>
+                        <input type="number" id="lightIntensityInput" min="0" step="0.1" value="1" oninput="updateLightIntensity()">
                     </div>
 
                     <div class="color-group">
@@ -396,21 +402,88 @@
                     <h4>ANIMATION SETTINGS</h4>
 
                     <div class="text-input-group">
-                        <label>Animation Name</label>
+                        <label>Name</label>
                         <input type="text" id="chainNameInput" placeholder="Animation name">
                     </div>
 
+                    <div id="triggersList"></div>
+
                     <div class="dropdown-group">
-                        <label>Trigger Type</label>
-                        <select id="triggerType" onchange="updateTriggerType()">
-                            <option value="manual">Manual</option>
-                            <option value="character_load">Character Load</option>
-                            <option value="character_unload">Character Unload</option>
-                            <option value="time_delay">Time Delay</option>
+                        <label>Add Trigger</label>
+                        <select id="newTriggerSelect" onchange="handleNewTriggerChange()">
+                            <option value="">Select...</option>
+                            <optgroup label="Automatic">
+                                <option value="on_load">On Load (Scene Start)</option>
+                            </optgroup>
+                            <optgroup label="Manual">
+                                <option value="manual">Manual</option>
+                            </optgroup>
+                            <optgroup label="Character Load">
+                                <option value="character_load">Any Character Load</option>
+                                <option value="character_load_hunter">Hunter Load</option>
+                                <option value="character_load_survivor">Any Survivor Load</option>
+                                <option value="character_load_survivor_1">Survivor 1 Load</option>
+                                <option value="character_load_survivor_2">Survivor 2 Load</option>
+                                <option value="character_load_survivor_3">Survivor 3 Load</option>
+                                <option value="character_load_survivor_4">Survivor 4 Load</option>
+                            </optgroup>
+                            <optgroup label="Character Unload">
+                                <option value="character_unload">Any Character Unload</option>
+                                <option value="character_unload_hunter">Hunter Unload</option>
+                                <option value="character_unload_survivor">Any Survivor Unload</option>
+                                <option value="character_unload_survivor_1">Survivor 1 Unload</option>
+                                <option value="character_unload_survivor_2">Survivor 2 Unload</option>
+                                <option value="character_unload_survivor_3">Survivor 3 Unload</option>
+                                <option value="character_unload_survivor_4">Survivor 4 Unload</option>
+                            </optgroup>
                         </select>
+                        <button onclick="addTrigger()" style="margin-top: 6px;">Add Trigger</button>
                     </div>
 
-                    <div id="triggerOptions"></div>
+                    <hr>
+
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="loopCheckbox">
+                            Loop Animation
+                        </label>
+                    </div>
+
+                    <div id="stopConditionsList"></div>
+
+                    <div class="dropdown-group">
+                        <label>Add Stop Condition</label>
+                        <select id="newStopConditionSelect" onchange="handleNewStopConditionChange()">
+                            <option value="">Select...</option>
+                            <optgroup label="Manual">
+                                <option value="none">None (Manual Stop)</option>
+                            </optgroup>
+                            <optgroup label="Character Load">
+                                <option value="character_load">Any Character Load</option>
+                                <option value="character_load_hunter">Hunter Load</option>
+                                <option value="character_load_survivor">Any Survivor Load</option>
+                                <option value="character_load_survivor_1">Survivor 1 Load</option>
+                                <option value="character_load_survivor_2">Survivor 2 Load</option>
+                                <option value="character_load_survivor_3">Survivor 3 Load</option>
+                                <option value="character_load_survivor_4">Survivor 4 Load</option>
+                            </optgroup>
+                            <optgroup label="Character Unload">
+                                <option value="character_unload">Any Character Unload</option>
+                                <option value="character_unload_hunter">Hunter Unload</option>
+                                <option value="character_unload_survivor">Any Survivor Unload</option>
+                                <option value="character_unload_survivor_1">Survivor 1 Unload</option>
+                                <option value="character_unload_survivor_2">Survivor 2 Unload</option>
+                                <option value="character_unload_survivor_3">Survivor 3 Unload</option>
+                                <option value="character_unload_survivor_4">Survivor 4 Unload</option>
+                            </optgroup>
+                            <optgroup label="Time">
+                                <option value="time_delay">Time Delay</option>
+                            </optgroup>
+                        </select>
+                        <button onclick="addStopCondition()" style="margin-top: 6px;">Add Stop Condition</button>
+                    </div>
+
+                    <div id="newStopConditionOptions"></div>
 
                     <div class="button-group" style="margin-top: 12px;">
                         <button onclick="saveChain()">Save</button>
@@ -433,7 +506,7 @@
 
             <div class="slider-group">
                 <label>Duration (ms): <span id="durationValue">1000</span></label>
-                <input type="range" id="durationSlider" min="100" max="5000" step="100" value="1000" oninput="updateKeyframeDuration()">
+                <input type="range" id="durationSlider" min="0" max="20000" step="100" value="1000" oninput="updateKeyframeDuration()">
             </div>
 
             <div class="slider-group">
@@ -477,7 +550,7 @@
 
             <div class="vector-input-group" id="kfRotationGroup">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                    <label style="margin-bottom: 0;">Rotation (deg)</label>
+                    <label style="margin-bottom: 0;">Rotation</label>
                     <button onclick="setTransformMode('rotate')" class="icon-button" style="padding: 4px; width: 24px; height: 24px; flex: none;" title="Switch to Rotate Mode">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21.5 2v6h-6"></path>
@@ -504,9 +577,9 @@
 
             <!-- Light-specific properties -->
             <div id="kfLightProperties" style="display: none;">
-                <div class="slider-group">
-                    <label>Intensity: <span id="kfIntensityValue">1.0</span></label>
-                    <input type="range" id="kfIntensitySlider" min="0" max="10" step="0.1" value="1" oninput="updateKeyframeProperties()">
+                <div class="text-input-group">
+                    <label>Intensity</label>
+                    <input type="number" id="kfIntensityInput" min="0" step="0.1" value="1" oninput="updateKeyframeProperties()">
                 </div>
 
                 <div class="color-group">
@@ -528,7 +601,11 @@
                 </div>
             </div>
 
-            <button onclick="syncFromObject()" class="secondary">📸 Set to Current State</button>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <button onclick="adoptViewportCameraToKeyframe()" class="primary" style="flex: 1;">Adopt Viewport Camera</button>
+                <button onclick="viewFromCameraKeyframe()" class="secondary" style="flex: 1;">View from Camera</button>
+            </div>
+            <button onclick="resetToStaticPosition()" class="secondary">Reset to Static Position</button>
 
             <div class="button-group" style="margin-top: 8px;">
                 <button onclick="deleteKeyframe()" class="danger">Delete Keyframe</button>
