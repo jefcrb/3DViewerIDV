@@ -9,7 +9,9 @@
     {
       "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "@theatre/core": "https://esm.sh/@theatre/core@0.7.2",
+        "@theatre/studio": "https://esm.sh/@theatre/studio@0.7.2?deps=@theatre/core@0.7.2"
       }
     }
     </script>
@@ -24,157 +26,9 @@
         <h2>Model not found</h2>
         <p id="errorMessage"></p>
     </div>
-    <div id="devPanel">
-        <h3>DEV CONTROLS 开发控制</h3>
 
-        <div class="dropdown-group">
-            <label>Hunter 监管者</label>
-            <select id="hunterSelect">
-                <option value="">None 无</option>
-            </select>
-        </div>
-
-        <div class="dropdown-group">
-            <label>Survivor 1 求生者1</label>
-            <select id="survivor1Select">
-                <option value="">None 无</option>
-            </select>
-        </div>
-
-        <div class="dropdown-group">
-            <label>Survivor 2 求生者2</label>
-            <select id="survivor2Select">
-                <option value="">None 无</option>
-            </select>
-        </div>
-
-        <div class="dropdown-group">
-            <label>Survivor 3 求生者3</label>
-            <select id="survivor3Select">
-                <option value="">None 无</option>
-            </select>
-        </div>
-
-        <div class="dropdown-group">
-            <label>Survivor 4 求生者4</label>
-            <select id="survivor4Select">
-                <option value="">None 无</option>
-            </select>
-        </div>
-
-        <button onclick="applyDevSelection()">Apply Changes 应用更改</button>
-
-        <hr>
-        <h4>RENDERING 渲染</h4>
-
-        <div class="dropdown-group">
-            <label>Renderer 渲染器</label>
-            <select id="rendererSelect" onchange="applyRendererSetting()">
-            <!--    <option value="webgpu">WebGPU</option> -->
-                <option value="webgl">WebGL</option>
-            </select>
-        </div>
-
-        <div class="dropdown-group">
-            <label>Tone Mapping 色调映射</label>
-            <select id="toneMappingSelect" onchange="applyRenderingSettings()">
-                <option value="NoToneMapping">No Tone Mapping 无色调映射</option>
-                <option value="Linear">Linear 线性</option>
-                <option value="Reinhard">Reinhard 莱因哈德</option>
-                <option value="Cineon">Cineon 电影级</option>
-                <option value="ACESFilmic" selected>ACES Filmic ACES胶片</option>
-            </select>
-        </div>
-
-        <div class="slider-group">
-            <label>Tone Mapping Exposure 色调映射曝光: <span id="exposureValue">1.0</span></label>
-            <input type="range" id="exposureSlider" min="0.1" max="3.0" step="0.1" value="1.0" oninput="applyRenderingSettings()">
-        </div>
-
-        <div class="dropdown-group">
-            <label>Shadow Map Type 阴影贴图类型</label>
-            <select id="shadowMapTypeSelect" onchange="applyRenderingSettings()">
-                <option value="Basic">Basic 基础</option>
-                <option value="PCF" selected>PCF 百分比渐近滤波</option>
-                <option value="PCFSoft">PCF Soft PCF软阴影</option>
-                <option value="VSM">VSM 方差阴影</option>
-            </select>
-        </div>
-
-        <hr>
-        <h4>LIGHTING 光照</h4>
-
-        <div class="slider-group">
-            <label>Hemisphere 半球光: <span id="hemisphereValue">0.02</span></label>
-            <input type="range" id="hemisphereSlider" min="0" max="2.0" step="0.01" value="0.02" oninput="applyLightingSettings()">
-        </div>
-
-        <div class="slider-group">
-            <label>Key Light 主光源: <span id="keyLightValue">0.8</span></label>
-            <input type="range" id="keyLightSlider" min="0" max="3.0" step="0.1" value="0.8" oninput="applyLightingSettings()">
-        </div>
-
-        <div class="slider-group">
-            <label>Fill Light 补光: <span id="fillLightValue">0.02</span></label>
-            <input type="range" id="fillLightSlider" min="0" max="2.0" step="0.01" value="0.02" oninput="applyLightingSettings()">
-        </div>
-
-        <div class="slider-group">
-            <label>Rim Light 轮廓光: <span id="rimLightValue">0.02</span></label>
-            <input type="range" id="rimLightSlider" min="0" max="2.0" step="0.01" value="0.02" oninput="applyLightingSettings()">
-        </div>
-
-        <div class="slider-group">
-            <label>Sun Light 太阳光: <span id="sunLightValue">0.8</span></label>
-            <input type="range" id="sunLightSlider" min="0" max="10.0" step="0.1" value="0.8" oninput="applyLightingSettings()">
-        </div>
-
-        <div class="color-group">
-            <label>Light Color 光源颜色</label>
-            <input type="color" id="lightColorPicker" value="#ffffff" oninput="applyLightingSettings()">
-        </div>
-
-        <div class="color-group">
-            <label>Sun Color 太阳颜色</label>
-            <input type="color" id="sunColorPicker" value="#ffffff" oninput="applyLightingSettings()">
-        </div>
-
-        <hr>
-        <h4>SUN POSITION 太阳位置</h4>
-
-        <div class="slider-group">
-            <label>X 横向: <span id="sunXValue">5</span></label>
-            <input type="range" id="sunXSlider" min="-20" max="20" step="1" value="5" oninput="applySunPosition()">
-        </div>
-
-        <div class="slider-group">
-            <label>Y 高度: <span id="sunYValue">15</span></label>
-            <input type="range" id="sunYSlider" min="0" max="30" step="1" value="15" oninput="applySunPosition()">
-        </div>
-
-        <div class="slider-group">
-            <label>Z 纵向: <span id="sunZValue">10</span></label>
-            <input type="range" id="sunZSlider" min="-20" max="20" step="1" value="10" oninput="applySunPosition()">
-        </div>
-
-        <hr>
-        <h4>KEY LIGHT POSITION 主光源位置</h4>
-
-        <div class="slider-group">
-            <label>X 横向: <span id="keyLightXValue">5</span></label>
-            <input type="range" id="keyLightXSlider" min="-20" max="20" step="1" value="5" oninput="applyKeyLightPosition()">
-        </div>
-
-        <div class="slider-group">
-            <label>Y 高度: <span id="keyLightYValue">8</span></label>
-            <input type="range" id="keyLightYSlider" min="0" max="30" step="1" value="8" oninput="applyKeyLightPosition()">
-        </div>
-
-        <div class="slider-group">
-            <label>Z 纵向: <span id="keyLightZValue">5</span></label>
-            <input type="range" id="keyLightZSlider" min="-20" max="20" step="1" value="5" oninput="applyKeyLightPosition()">
-        </div>
-    </div>
+    <button id="modeToggleBtn" style="display:none;">Switch to Editor</button>
+    <div id="editorPanel" style="display:none;"></div>
 
     <script type="module" src="js/main.js"></script>
 </body>

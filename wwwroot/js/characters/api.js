@@ -1,38 +1,61 @@
 import { state as sceneState, hideDummyModels } from '../scene/loader.js';
 import { state as characterState, loadCharacterModel } from './loader.js';
 import { playOutroAnimation } from '../customization/outroAnimation.js';
+import { fire } from '../animation/triggers.js';
 
-// Detect if running in web context (localhost) vs WebView2 (app.local)
 const isWebContext = window.location.hostname === 'localhost';
 let lastFetchedData = null;
+let lastHunterKey = null;
+let lastSurvivorKeys = [null, null, null, null];
+let sceneLoadedFired = false;
 
 console.log('[Init] Hostname:', window.location.hostname);
 console.log('[Init] Is web context:', isWebContext);
 
-// Poll character data from web server (only in web context)
+function characterKey(c) {
+    if (!c || !c.hasModel) return null;
+    return (c.modelPath || '') + (c.modelFile || '');
+}
+
 async function pollCharacterData() {
-    if (!isWebContext) return; // Skip if in WebView2
+    if (!isWebContext) return;
 
     try {
-        console.log('[Polling] Fetching /api/characters...');
         const response = await fetch('/api/characters');
         const data = await response.json();
         const dataStr = JSON.stringify(data);
-
-        console.log('[Polling] Received data:', data);
-        console.log('[Polling] Last data:', lastFetchedData);
-
-        // Only update if data changed
         if (dataStr !== lastFetchedData) {
-            console.log('[Polling] Data changed, updating scene');
             lastFetchedData = dataStr;
             window.loadCharactersJson(data);
-        } else {
-            console.log('[Polling] Data unchanged, skipping update');
         }
     } catch (error) {
         console.error('Failed to fetch character data:', error);
     }
+}
+
+function fireDiffEvents(jsonData) {
+    const newHunterKey = characterKey(jsonData.hunter);
+    if (newHunterKey && newHunterKey !== lastHunterKey) {
+        if (lastHunterKey === null) {
+            fire('hunter_selected', { name: jsonData.hunter?.name });
+        } else {
+            fire('hunter_changed', { name: jsonData.hunter?.name });
+        }
+    }
+    lastHunterKey = newHunterKey;
+
+    let anyChanged = false;
+    const survivors = jsonData.survivors || [];
+    for (let i = 0; i < 4; i++) {
+        const survivor = survivors[i];
+        const newKey = characterKey(survivor);
+        if (newKey && newKey !== lastSurvivorKeys[i]) {
+            fire(`survivor_${i + 1}_selected`, { index: i, name: survivor?.name });
+            anyChanged = true;
+        }
+        lastSurvivorKeys[i] = newKey;
+    }
+    if (anyChanged) fire('survivor_any_selected', {});
 }
 
 export function setupCharacterAPI(scene) {
@@ -42,6 +65,10 @@ export function setupCharacterAPI(scene) {
         if (sceneState.sceneLoaded) {
             hideDummyModels(sceneState.dummyModels);
         }
+
+        // Always recompute current positions from the latest registry-merged state
+        const hunterTransform = sceneState.characterPositions.hunter;
+        const survivorTransforms = sceneState.characterPositions.survivors;
 
         const hunterUrl = (jsonData.hunter && jsonData.hunter.hasModel)
             ? jsonData.hunter.modelPath + jsonData.hunter.modelFile
@@ -53,13 +80,12 @@ export function setupCharacterAPI(scene) {
                 characterState.loadedCharacters.hunter = null;
                 console.log('Removed old hunter');
             }
-
-            if (hunterUrl) {
+            if (hunterUrl && hunterTransform) {
                 loadCharacterModel(
                     scene,
                     hunterUrl,
                     jsonData.hunter.name,
-                    sceneState.characterPositions.hunter,
+                    hunterTransform,
                     'hunter',
                     -1
                 );
@@ -85,13 +111,12 @@ export function setupCharacterAPI(scene) {
                         characterState.loadedCharacters.survivors[index] = null;
                         console.log(`Removed old survivor at position ${index}`);
                     }
-
-                    if (survivorUrl) {
+                    if (survivorUrl && survivorTransforms[index]) {
                         loadCharacterModel(
                             scene,
                             survivorUrl,
                             survivor.name,
-                            sceneState.characterPositions.survivors[index],
+                            survivorTransforms[index],
                             'survivor',
                             index
                         );
@@ -112,16 +137,24 @@ export function setupCharacterAPI(scene) {
                 console.log(`Removed survivor at position ${i} (no longer in data)`);
             }
         }
+
+        fireDiffEvents(jsonData);
     };
 
     window.loadHunterFromJson = window.loadCharactersJson;
 
-    // Start polling if in web context (OBS browser source)
     if (isWebContext) {
         console.log('[Init] Starting polling (every 1 second)');
-        setInterval(pollCharacterData, 1000); // Poll every 1 second
-        pollCharacterData(); // Initial fetch
+        setInterval(pollCharacterData, 1000);
+        pollCharacterData();
     } else {
         console.log('[Init] WebView2 context detected, polling disabled');
     }
+}
+
+export function fireSceneLoaded() {
+    if (sceneLoadedFired) return;
+    sceneLoadedFired = true;
+    fire('scene_loaded', {});
+    fire('loop', {});
 }

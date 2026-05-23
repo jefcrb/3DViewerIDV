@@ -1,43 +1,48 @@
 import * as THREE from 'three';
 import { DEV, DEV_DATA } from './config.js';
-import { setupRenderer, setupScene, setupCamera, setupControls, setupStudioLighting, setupWindowResize } from './scene/setup.js';
-import { loadBlenderScene, createMinimalFallbackScene } from './scene/loader.js';
+import {
+    setupRenderer,
+    setupScene,
+    setupLiveCamera,
+    setupEditorCamera,
+    setupEditorControls,
+    setupStudioLighting,
+    setupWindowResize,
+    createLiveCameraHelper
+} from './scene/setup.js';
+import {
+    loadBlenderScene,
+    createMinimalFallbackScene,
+    applyRegistrySlotsToCharacterPositions,
+    state as sceneState
+} from './scene/loader.js';
 import { loadCustomScales, preloadAllModels, state as characterState } from './characters/loader.js';
-import { setupCharacterAPI } from './characters/api.js';
-import { populateDevDropdowns, setupDevMode, setDevReferences, applyStoredSettings } from './dev/devMode.js';
+import { setupCharacterAPI, fireSceneLoaded } from './characters/api.js';
 import { loadSettings } from './storage/settingsStorage.js';
+import { registry } from './editor/registry.js';
+import { initTheatre } from './animation/theatreSetup.js';
 
 const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
 
-let renderer, scene, camera, controls, lights;
+let renderer, scene, editorCamera, liveCamera, editorControls, cameraHelper;
 
 const TARGET_FPS = 60;
 const MIN_FRAME_TIME = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
 
-async function initializeScene() {
-    try {
-        await loadBlenderScene(scene, camera);
-        await loadCustomScales();
-        console.log('Scene initialization complete');
-    } catch (error) {
-        console.error('Blender scene loading failed:', error);
-        console.error('Error details:', error.message);
-        console.warn('Creating fallback scene. Please add scene.glb to assets/ folder.');
-
-        createMinimalFallbackScene(scene);
+function getCurrentCamera() {
+    if (window.__editor && window.__editor.getActiveCamera) {
+        return window.__editor.getActiveCamera() || liveCamera;
     }
+    return liveCamera;
 }
 
 function animate(currentTime) {
     requestAnimationFrame(animate);
 
-    // FPS throttling
     const elapsed = currentTime - lastFrameTime;
-    if (elapsed < MIN_FRAME_TIME) {
-        return;
-    }
+    if (elapsed < MIN_FRAME_TIME) return;
     lastFrameTime = currentTime - (elapsed % MIN_FRAME_TIME);
 
     const delta = clock.getDelta();
@@ -46,16 +51,18 @@ function animate(currentTime) {
         characterState.loadedCharacters.hunter.mixer.update(delta);
     }
     characterState.loadedCharacters.survivors.forEach(survivor => {
-        if (survivor?.mixer) {
-            survivor.mixer.update(delta);
-        }
+        if (survivor?.mixer) survivor.mixer.update(delta);
     });
 
-    if (controls.enabled) {
-        controls.update();
+    if (editorControls && editorControls.enabled) {
+        editorControls.update();
     }
 
-    renderer.render(scene, camera);
+    if (cameraHelper && cameraHelper.visible) {
+        cameraHelper.update();
+    }
+
+    renderer.render(scene, getCurrentCamera());
 }
 
 (async function() {
@@ -66,19 +73,71 @@ function animate(currentTime) {
 
         renderer = await setupRenderer(canvas, rendererType);
         scene = setupScene(renderer);
-        camera = setupCamera();
-        controls = setupControls(camera, canvas);
+        liveCamera = setupLiveCamera();
+        editorCamera = setupEditorCamera();
+        editorControls = setupEditorControls(editorCamera, canvas);
+        cameraHelper = createLiveCameraHelper(liveCamera);
+        // TransformControls requires its target to be in a scene graph
+        scene.add(liveCamera);
+        scene.add(cameraHelper);
 
-        lights = setupStudioLighting(scene);
-        await applyStoredSettings(lights, renderer);
+        setupWindowResize([liveCamera, editorCamera], renderer);
 
-        setupWindowResize(camera, renderer);
+        // Initialize registry with scene + liveCamera reference
+        registry.init(scene, liveCamera);
+
+        // Hydrate registry from saved editor settings BEFORE seeding defaults
+        if (settings?.editor) {
+            registry.hydrate(settings.editor);
+        }
+
+        // Seed default lighting rig if registry is still empty
+        setupStudioLighting();
+
+        const hadSavedLiveCamera = !!settings?.editor?.liveCamera;
+        try {
+            // Skip Blender camera override if user has a saved live camera
+            await loadBlenderScene(scene, hadSavedLiveCamera ? null : liveCamera);
+            await loadCustomScales();
+        } catch (error) {
+            console.error('Blender scene loading failed:', error);
+            createMinimalFallbackScene(scene);
+        }
+
+        // Seed default slots from dummies if none persisted
+        if (registry.slots.size === 0) {
+            registry.seedDefaultSlots(sceneState.dummyTransforms);
+        }
+
+        // Layer registry slot overrides onto current character positions
+        applyRegistrySlotsToCharacterPositions(registry);
+
+        // Keep characterPositions in sync whenever slots change
+        registry.addEventListener('slots:update', () => applyRegistrySlotsToCharacterPositions(registry));
+        registry.addEventListener('slots:add', () => applyRegistrySlotsToCharacterPositions(registry));
+        registry.addEventListener('slots:remove', () => applyRegistrySlotsToCharacterPositions(registry));
+
         setupCharacterAPI(scene);
-        setupDevMode();
-        await setDevReferences(lights, renderer);
 
-        await initializeScene();
-        console.log('Scene ready');
+        // Initialize Theatre.js (loads core always, studio in DEV mode only)
+        await initTheatre(liveCamera);
+
+        // Initialize editor only in DEV mode
+        if (DEV) {
+            const editorMod = await import('./editor/editorMode.js');
+            const camPanelMod = await import('./editor/cameraPanel.js');
+            camPanelMod.setEditorCameraRef(editorCamera);
+            await editorMod.initEditor({
+                scene,
+                editorCamera,
+                liveCamera,
+                orbitControls: editorControls,
+                cameraHelper,
+                canvas
+            });
+            window.__editor = editorMod;
+            document.getElementById('modeToggleBtn').style.display = 'inline-block';
+        }
 
         // Preload all character models in background
         preloadAllModels().catch(err => {
@@ -87,13 +146,13 @@ function animate(currentTime) {
 
         animate();
 
+        // Fire scene_loaded after first frame so animations can react
+        requestAnimationFrame(() => fireSceneLoaded());
+
         if (DEV) {
             console.log('DEV MODE: Enabled');
-            document.getElementById('devPanel').style.display = 'block';
-            populateDevDropdowns();
-
             setTimeout(() => {
-                window.loadCharactersJson(DEV_DATA);
+                if (window.loadCharactersJson) window.loadCharactersJson(DEV_DATA);
             }, 500);
         }
     } catch (error) {
