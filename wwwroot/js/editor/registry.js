@@ -23,6 +23,25 @@ const SHADOW_DEFAULTS = {
     cameraBounds: 15
 };
 
+// THREE.shadowMap.type values. Kept here as a plain map so the panel can populate a dropdown
+// without importing THREE.
+export const SHADOW_MAP_TYPES = {
+    Basic: 0,
+    PCF: 1,
+    PCFSoft: 2,
+    VSM: 3
+};
+
+const WORLD_DEFAULTS = {
+    backgroundColor: '#1a1a2e',
+    shadowsEnabled: true,
+    shadowMapType: 'PCFSoft',
+    shadowMapSize: SHADOW_DEFAULTS.mapSize,
+    shadowBias: SHADOW_DEFAULTS.bias,
+    shadowNormalBias: SHADOW_DEFAULTS.normalBias,
+    shadowRadius: SHADOW_DEFAULTS.radius
+};
+
 function newId(prefix) {
     if (crypto && crypto.randomUUID) return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
     return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -44,15 +63,22 @@ function vecToArr(v) {
     return [0, 0, 0];
 }
 
-function configureShadow(light, extras = {}) {
-    const mapSize = extras.shadowMapSize ?? SHADOW_DEFAULTS.mapSize;
+function configureShadow(light, extras = {}, world = WORLD_DEFAULTS) {
+    const mapSize = extras.shadowMapSize ?? world.shadowMapSize ?? SHADOW_DEFAULTS.mapSize;
     light.shadow.mapSize.width = mapSize;
     light.shadow.mapSize.height = mapSize;
     light.shadow.camera.near = SHADOW_DEFAULTS.near;
     light.shadow.camera.far = SHADOW_DEFAULTS.far;
-    light.shadow.bias = SHADOW_DEFAULTS.bias;
-    light.shadow.normalBias = SHADOW_DEFAULTS.normalBias;
-    light.shadow.radius = SHADOW_DEFAULTS.radius;
+    light.shadow.bias = world.shadowBias ?? SHADOW_DEFAULTS.bias;
+    light.shadow.normalBias = world.shadowNormalBias ?? SHADOW_DEFAULTS.normalBias;
+    light.shadow.radius = world.shadowRadius ?? SHADOW_DEFAULTS.radius;
+    if (light.shadow.map) {
+        light.shadow.map.dispose();
+        light.shadow.map = null;
+    }
+    if (light.shadow.camera.updateProjectionMatrix) {
+        light.shadow.camera.updateProjectionMatrix();
+    }
     if (light.isDirectionalLight) {
         const b = extras.shadowBounds ?? SHADOW_DEFAULTS.cameraBounds;
         light.shadow.camera.left = -b;
@@ -67,20 +93,35 @@ class Registry extends EventTarget {
         super();
         this.scene = null;
         this.liveCameraRef = null;
+        this.rendererRef = null;
         this.lights = new Map();
         this.slots = new Map();
         this.liveCamera = {
             position: [8, 6, 8],
-            target: [0, 1, 0],
+            rotation: [0, 0, 0],
             fov: 50
         };
+        this.world = { ...WORLD_DEFAULTS };
     }
 
-    init(scene, liveCamera) {
+    init(scene, liveCamera, renderer = null) {
         this.scene = scene;
         this.liveCameraRef = liveCamera;
+        this.rendererRef = renderer;
         this.liveCamera.position = vecToArr(liveCamera.position);
+        this.liveCamera.rotation = [liveCamera.rotation.x, liveCamera.rotation.y, liveCamera.rotation.z];
         this.liveCamera.fov = liveCamera.fov;
+        // Reflect current scene/renderer state into the world spec so the panel reads accurate values.
+        if (scene?.background?.getHexString) {
+            this.world.backgroundColor = '#' + scene.background.getHexString();
+        }
+        if (renderer?.shadowMap) {
+            this.world.shadowsEnabled = !!renderer.shadowMap.enabled;
+            const t = renderer.shadowMap.type;
+            for (const [name, val] of Object.entries(SHADOW_MAP_TYPES)) {
+                if (val === t) { this.world.shadowMapType = name; break; }
+            }
+        }
     }
 
     emit(type, detail) {
@@ -192,7 +233,7 @@ class Registry extends EventTarget {
         }
         if (spec.castShadow && (light.isDirectionalLight || light.isPointLight || light.isSpotLight)) {
             light.castShadow = true;
-            configureShadow(light, spec.extras);
+            configureShadow(light, spec.extras, this.world);
         }
         light.userData.registryId = spec.id;
         return light;
@@ -221,7 +262,7 @@ class Registry extends EventTarget {
         }
         if (spec.castShadow !== light.castShadow) {
             light.castShadow = !!spec.castShadow;
-            if (light.castShadow) configureShadow(light, spec.extras);
+            if (light.castShadow) configureShadow(light, spec.extras, this.world);
         }
     }
 
@@ -326,18 +367,80 @@ class Registry extends EventTarget {
     // ===== Live Camera =====
 
     updateLiveCamera(partial) {
+        // Backward-compat: convert legacy target into rotation by snapshotting lookAt.
+        if (partial.target && !partial.rotation && this.liveCameraRef) {
+            const t = vecToArr(partial.target);
+            const tmpPos = partial.position
+                ? vecToArr(partial.position)
+                : [...this.liveCamera.position];
+            const cam = this.liveCameraRef;
+            const savedPos = cam.position.clone();
+            const savedRot = cam.rotation.clone();
+            cam.position.set(...tmpPos);
+            cam.lookAt(t[0], t[1], t[2]);
+            partial.rotation = [cam.rotation.x, cam.rotation.y, cam.rotation.z];
+            cam.position.copy(savedPos);
+            cam.rotation.copy(savedRot);
+            delete partial.target;
+        }
+
         Object.assign(this.liveCamera, partial);
+
         if (this.liveCameraRef) {
             if (partial.position) this.liveCameraRef.position.set(...vecToArr(partial.position));
+            if (partial.rotation) {
+                this.liveCameraRef.rotation.set(
+                    partial.rotation[0],
+                    partial.rotation[1],
+                    partial.rotation[2]
+                );
+            }
             if (partial.fov != null) {
                 this.liveCameraRef.fov = partial.fov;
                 this.liveCameraRef.updateProjectionMatrix();
             }
-            if (partial.target) {
-                this.liveCameraRef.lookAt(...vecToArr(partial.target));
-            }
         }
         this.emit('liveCamera:update', { spec: this.liveCamera });
+    }
+
+    // ===== World (scene background + shadow settings) =====
+
+    updateWorld(partial) {
+        Object.assign(this.world, partial);
+        this._applyWorldSpec();
+        this.emit('world:update', { spec: { ...this.world } });
+    }
+
+    _applyWorldSpec() {
+        if (this.scene && this.world.backgroundColor) {
+            const colorInt = hexToInt(this.world.backgroundColor);
+            if (this.scene.background?.setHex) {
+                this.scene.background.setHex(colorInt);
+            } else {
+                this.scene.background = new THREE.Color(colorInt);
+            }
+        }
+        if (this.rendererRef?.shadowMap) {
+            this.rendererRef.shadowMap.enabled = !!this.world.shadowsEnabled;
+            const typeVal = SHADOW_MAP_TYPES[this.world.shadowMapType];
+            if (typeVal != null && this.rendererRef.shadowMap.type !== typeVal) {
+                this.rendererRef.shadowMap.type = typeVal;
+                this.rendererRef.shadowMap.needsUpdate = true;
+                // Force material recompile so the new shadow map sampler is picked up.
+                this.scene?.traverse(obj => {
+                    if (obj.material) {
+                        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                        mats.forEach(m => { m.needsUpdate = true; });
+                    }
+                });
+            }
+        }
+        // Re-apply shadow params on all shadow-casting lights.
+        for (const entry of this.lights.values()) {
+            if (entry.threeObject.castShadow) {
+                configureShadow(entry.threeObject, entry.spec.extras, this.world);
+            }
+        }
     }
 
     // ===== Serialize / Hydrate =====
@@ -346,7 +449,8 @@ class Registry extends EventTarget {
         return {
             lights: this.listLights(),
             slots: this.listSlots(),
-            liveCamera: { ...this.liveCamera }
+            liveCamera: { ...this.liveCamera },
+            world: { ...this.world }
         };
     }
 
@@ -356,6 +460,11 @@ class Registry extends EventTarget {
         for (const id of Array.from(this.lights.keys())) this.removeLight(id);
         for (const id of Array.from(this.slots.keys())) this.removeSlot(id);
 
+        // World goes first so shadow settings are in effect when lights are created.
+        if (data.world) {
+            this.world = { ...WORLD_DEFAULTS, ...data.world };
+            this._applyWorldSpec();
+        }
         if (Array.isArray(data.lights)) {
             data.lights.forEach(spec => this.addLight(spec));
         }
@@ -367,35 +476,6 @@ class Registry extends EventTarget {
         }
     }
 
-    // Remove Theatre.js object tracks whose keys reference IDs no longer in this registry.
-    // Theatre object keys are "light:<id>", "slot:<id>", or "liveCamera".
-    pruneOrphans(theatreSaveFile) {
-        if (!theatreSaveFile || typeof theatreSaveFile !== 'object') return theatreSaveFile;
-        const validKeys = new Set(['liveCamera']);
-        for (const id of this.lights.keys()) validKeys.add(`light:${id}`);
-        for (const id of this.slots.keys()) validKeys.add(`slot:${id}`);
-
-        const walk = (node) => {
-            if (!node || typeof node !== 'object') return;
-            if (node.sheetsById) {
-                for (const sheetId of Object.keys(node.sheetsById)) {
-                    const sheet = node.sheetsById[sheetId];
-                    if (sheet && sheet.staticOverrides && sheet.staticOverrides.byObject) {
-                        for (const key of Object.keys(sheet.staticOverrides.byObject)) {
-                            if (!validKeys.has(key)) delete sheet.staticOverrides.byObject[key];
-                        }
-                    }
-                    if (sheet && sheet.sequence && sheet.sequence.tracksByObject) {
-                        for (const key of Object.keys(sheet.sequence.tracksByObject)) {
-                            if (!validKeys.has(key)) delete sheet.sequence.tracksByObject[key];
-                        }
-                    }
-                }
-            }
-        };
-        walk(theatreSaveFile);
-        return theatreSaveFile;
-    }
 }
 
 export const registry = new Registry();

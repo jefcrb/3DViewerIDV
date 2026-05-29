@@ -128,6 +128,48 @@ export function getLastLoaded() {
     return lastLoaded;
 }
 
+// Trigger a browser download of the current settings as JSON.
+export function exportSettings() {
+    const data = lastLoaded || {};
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `viewer_settings_${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Parse a File, validate basic shape, and POST it to overwrite viewer_settings.json.
+// Throws on invalid JSON, non-object root, or network failure.
+export async function importSettings(file) {
+    const text = await file.text();
+    let parsed;
+    try {
+        parsed = JSON.parse(text);
+    } catch (e) {
+        throw new Error('Invalid JSON: ' + e.message);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Settings file must contain a JSON object at the root');
+    }
+    const json = JSON.stringify(parsed, null, 2);
+    const response = await fetch('./api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: json
+    });
+    if (!response.ok) {
+        throw new Error(`Save failed (${response.status})`);
+    }
+    lastLoaded = parsed;
+    return parsed;
+}
+
 export function getStorageInfo() {
     console.log('Settings file: viewer_settings.json (in wwwroot)');
     return {

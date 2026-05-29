@@ -5,9 +5,10 @@ import { renderLightsPanel } from './lightsPanel.js';
 import { renderSlotsPanel } from './slotsPanel.js';
 import { renderCameraPanel } from './cameraPanel.js';
 import { renderAnimationsPanel } from './animationsPanel.js';
-import { saveAnimations } from '../animation/theatreSetup.js';
-import { saveSettings } from '../storage/settingsStorage.js';
-import { getTriggerMap } from '../animation/triggers.js';
+import { renderWorldPanel } from './worldPanel.js';
+import { saveSettings, exportSettings, importSettings } from '../storage/settingsStorage.js';
+import { sequencer } from '../animation/sequencer.js';
+import { setFiringAllowed, fire } from '../animation/triggers.js';
 
 let mode = 'live';
 let editorCamera = null;
@@ -53,6 +54,14 @@ export async function setMode(next) {
     if (panel) panel.style.display = isEditor ? 'flex' : 'none';
     const toggleBtn = document.getElementById('modeToggleBtn');
     if (toggleBtn) toggleBtn.textContent = isEditor ? 'Switch to Live' : 'Switch to Editor';
+
+    // Editor mode disables auto-trigger firing and stops any running sequences so
+    // the user can edit without their changes being overwritten. Live mode resumes
+    // auto-triggers and fires `loop` so looping sequences kick back in.
+    setFiringAllowed(!isEditor);
+    if (!isEditor) {
+        fire('loop', { reason: 'mode_switch_to_live' });
+    }
 }
 
 function detachGizmo() {
@@ -154,7 +163,8 @@ function wireGizmoTransforms() {
         if (!selectedTargetId) return;
         if (selectedTargetId === 'liveCamera') {
             registry.updateLiveCamera({
-                position: [liveCamera.position.x, liveCamera.position.y, liveCamera.position.z]
+                position: [liveCamera.position.x, liveCamera.position.y, liveCamera.position.z],
+                rotation: [liveCamera.rotation.x, liveCamera.rotation.y, liveCamera.rotation.z]
             });
             cameraHelper && cameraHelper.update();
             return;
@@ -233,12 +243,13 @@ function syncPanelInputs(detail) {
         const spec = detail.spec;
         const pane = document.querySelector('.tab-pane[data-tab="cameras"]');
         if (!pane) return;
+        const RAD2DEG = 180 / Math.PI;
         setIfNotFocused(pane.querySelector('#liveCamX'), spec.position[0]);
         setIfNotFocused(pane.querySelector('#liveCamY'), spec.position[1]);
         setIfNotFocused(pane.querySelector('#liveCamZ'), spec.position[2]);
-        setIfNotFocused(pane.querySelector('#liveCamTX'), spec.target[0]);
-        setIfNotFocused(pane.querySelector('#liveCamTY'), spec.target[1]);
-        setIfNotFocused(pane.querySelector('#liveCamTZ'), spec.target[2]);
+        setIfNotFocused(pane.querySelector('#liveCamRX'), (spec.rotation[0] * RAD2DEG).toFixed(2));
+        setIfNotFocused(pane.querySelector('#liveCamRY'), (spec.rotation[1] * RAD2DEG).toFixed(2));
+        setIfNotFocused(pane.querySelector('#liveCamRZ'), (spec.rotation[2] * RAD2DEG).toFixed(2));
         setIfNotFocused(pane.querySelector('#liveCamFov'), spec.fov);
         const fovLabel = pane.querySelector('#liveCamFovValue');
         if (fovLabel) fovLabel.textContent = `${spec.fov}°`;
@@ -262,6 +273,9 @@ function buildHeader(panel) {
             <button id="gizmoRotate" title="Rotate (E)">Rot</button>
             <button id="gizmoScale" title="Scale (R)">Scale</button>
             <button id="gizmoDetach" title="Deselect (Esc)">×</button>
+            <button id="exportBtn" title="Download viewer_settings.json">Export</button>
+            <button id="importBtn" title="Replace settings from a JSON file">Import</button>
+            <input id="importFile" type="file" accept="application/json,.json" style="display:none">
             <button id="saveAllBtn" title="Save all (auto-saves on change)">Save</button>
         </div>
     `;
@@ -272,6 +286,28 @@ function buildHeader(panel) {
     header.querySelector('#gizmoScale').onclick = () => transformControls.setMode('scale');
     header.querySelector('#gizmoDetach').onclick = () => detachGizmo();
     header.querySelector('#saveAllBtn').onclick = () => saveEditorState();
+    header.querySelector('#exportBtn').onclick = () => exportSettings();
+    const fileInput = header.querySelector('#importFile');
+    header.querySelector('#importBtn').onclick = () => fileInput.click();
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const ok = confirm(`Replace current settings with "${file.name}"? This overwrites viewer_settings.json and reloads the page.`);
+        if (!ok) {
+            fileInput.value = '';
+            return;
+        }
+        try {
+            // Cancel any pending auto-save so it can't clobber the imported file
+            // between the POST and the reload.
+            clearTimeout(autoSaveTimer);
+            await importSettings(file);
+            location.reload();
+        } catch (err) {
+            alert('Import failed: ' + err.message);
+            fileInput.value = '';
+        }
+    };
 }
 
 function buildTabs(panel) {
@@ -281,6 +317,7 @@ function buildTabs(panel) {
         <button class="tab-btn active" data-tab="lights">Lights</button>
         <button class="tab-btn" data-tab="slots">Slots</button>
         <button class="tab-btn" data-tab="cameras">Cameras</button>
+        <button class="tab-btn" data-tab="world">World</button>
         <button class="tab-btn" data-tab="animations">Animations</button>
     `;
     panel.appendChild(tabs);
@@ -291,6 +328,7 @@ function buildTabs(panel) {
         <div class="tab-pane active" data-tab="lights"></div>
         <div class="tab-pane" data-tab="slots"></div>
         <div class="tab-pane" data-tab="cameras"></div>
+        <div class="tab-pane" data-tab="world"></div>
         <div class="tab-pane" data-tab="animations"></div>
     `;
     panel.appendChild(tabContent);
@@ -306,9 +344,11 @@ function buildTabs(panel) {
 }
 
 async function saveEditorState(opts = {}) {
-    const editor = { ...registry.serialize(), triggers: getTriggerMap() };
+    const editor = {
+        ...registry.serialize(),
+        sequences: sequencer.serialize()
+    };
     await saveSettings({ editor });
-    await saveAnimations();
     if (!opts.silent) console.log('Editor state saved');
 }
 
@@ -339,6 +379,7 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     renderLightsPanel();
     renderSlotsPanel();
     renderCameraPanel();
+    renderWorldPanel();
     renderAnimationsPanel();
 
     // Re-render panels ONLY when the row structure changes (add/remove).
@@ -363,6 +404,21 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
         if (selectedTargetId === `light:${e.detail.id}`) detachGizmo();
     });
 
+    // Sequencer changes trigger an auto-save. Re-render only when structure changes
+    // (add/remove) or when focus is outside the animations pane, so we don't yank
+    // focus from inputs the user is editing.
+    const rerenderIfSafe = () => {
+        const pane = document.querySelector('.tab-pane[data-tab="animations"]');
+        if (!pane || !pane.contains(document.activeElement)) {
+            renderAnimationsPanel();
+        }
+    };
+    sequencer.addEventListener('seq:add', () => { renderAnimationsPanel(); scheduleAutoSave(); });
+    sequencer.addEventListener('seq:remove', () => { renderAnimationsPanel(); scheduleAutoSave(); });
+    sequencer.addEventListener('seq:update', () => { rerenderIfSafe(); scheduleAutoSave(); });
+    sequencer.addEventListener('seq:play', () => rerenderIfSafe());
+    sequencer.addEventListener('seq:stop', () => rerenderIfSafe());
+
     window.addEventListener('keydown', (e) => {
         if (mode !== 'editor') return;
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -372,5 +428,6 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
         if (e.key === 'Escape') detachGizmo();
     });
 
-    await setMode('live');
+    // In DEV mode we open straight into editor mode (panel visible, sequences paused).
+    await setMode('editor');
 }

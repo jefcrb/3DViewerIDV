@@ -20,7 +20,7 @@ import { loadCustomScales, preloadAllModels, state as characterState } from './c
 import { setupCharacterAPI, fireSceneLoaded } from './characters/api.js';
 import { loadSettings } from './storage/settingsStorage.js';
 import { registry } from './editor/registry.js';
-import { initTheatre } from './animation/theatreSetup.js';
+import { sequencer } from './animation/sequencer.js';
 
 const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
@@ -54,6 +54,9 @@ function animate(currentTime) {
         if (survivor?.mixer) survivor.mixer.update(delta);
     });
 
+    // Drive any active sequences. update() takes wall-clock seconds.
+    sequencer.update(currentTime / 1000);
+
     if (editorControls && editorControls.enabled) {
         editorControls.update();
     }
@@ -83,8 +86,8 @@ function animate(currentTime) {
 
         setupWindowResize([liveCamera, editorCamera], renderer);
 
-        // Initialize registry with scene + liveCamera reference
-        registry.init(scene, liveCamera);
+        // Initialize registry with scene + liveCamera + renderer references
+        registry.init(scene, liveCamera, renderer);
 
         // Hydrate registry from saved editor settings BEFORE seeding defaults
         if (settings?.editor) {
@@ -104,6 +107,15 @@ function animate(currentTime) {
             createMinimalFallbackScene(scene);
         }
 
+        // Sync registry's stored liveCamera with the actual camera state after Blender
+        // load (only if user had no saved liveCamera — otherwise registry already holds
+        // the authored values).
+        if (!hadSavedLiveCamera) {
+            registry.liveCamera.position = [liveCamera.position.x, liveCamera.position.y, liveCamera.position.z];
+            registry.liveCamera.rotation = [liveCamera.rotation.x, liveCamera.rotation.y, liveCamera.rotation.z];
+            registry.liveCamera.fov = liveCamera.fov;
+        }
+
         // Seed default slots from dummies if none persisted
         if (registry.slots.size === 0) {
             registry.seedDefaultSlots(sceneState.dummyTransforms);
@@ -119,10 +131,13 @@ function animate(currentTime) {
 
         setupCharacterAPI(scene);
 
-        // Initialize Theatre.js (loads core always, studio in DEV mode only)
-        await initTheatre(liveCamera);
+        // Hydrate sequences from saved settings
+        if (Array.isArray(settings?.editor?.sequences)) {
+            sequencer.hydrate(settings.editor.sequences);
+        }
 
-        // Initialize editor only in DEV mode
+        // Initialize editor only in DEV mode. In DEV the editor's setMode('editor')
+        // call disables auto-firing; in non-DEV the live view fires triggers freely.
         if (DEV) {
             const editorMod = await import('./editor/editorMode.js');
             const camPanelMod = await import('./editor/cameraPanel.js');

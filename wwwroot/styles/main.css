@@ -617,3 +617,265 @@ html, body {
     font-size: 11px;
     cursor: pointer;
 }
+
+/* ==================== KEYFRAME EDITOR ==================== */
+
+.keyframe-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 4px 0;
+}
+
+.kf-row {
+    background: #232323;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.kf-row.open { border-color: #7b61ff; }
+
+.kf-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+}
+.kf-toggle {
+    background: transparent;
+    border: none;
+    color: #b3b3b3;
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0 2px;
+    width: 18px;
+}
+.kf-toggle:hover { color: #e5e5e5; }
+
+.kf-time {
+    width: 56px;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.kf-summary {
+    flex: 1;
+    color: #b3b3b3;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kf-duplicate,
+.kf-delete {
+    background: #2c2c2c;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.kf-delete { color: #ff8080; }
+.kf-duplicate:hover,
+.kf-delete:hover { background: #3c3c3c; }
+
+.kf-detail {
+    padding: 6px 8px 8px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #1c1c1c;
+    border-top: 1px solid #3c3c3c;
+}
+
+.kf-section {
+    background: #232323;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.kf-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #e5e5e5;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+}
+
+.kf-section .muted {
+    color: #7a7a7a;
+    font-weight: 400;
+    font-size: 10px;
+}
+
+.kf-section label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #b3b3b3;
+    font-size: 11px;
+    flex-wrap: wrap;
+}
+
+.kf-section input[type="number"] {
+    flex: 1;
+    min-width: 0;
+    width: 54px;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.kf-section input[type="color"] {
+    width: 28px;
+    height: 22px;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    background: #1e1e1e;
+    cursor: pointer;
+    padding: 1px;
+}
+
+.kf-record-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+}
+.kf-record-row input[type="number"] {
+    width: 60px;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 11px;
+}
+.kf-record-row button {
+    background: #2c2c2c;
+    color: #e5e5e5;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.kf-record-row .kf-record-btn {
+    background: #7b61ff;
+    border-color: #6750d4;
+    color: white;
+}
+.kf-record-row .kf-record-btn:hover { background: #6750d4; }
+
+/* ===== Targets row ===== */
+
+.target-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0;
+    min-height: 22px;
+}
+.target-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #2c2c2c;
+    border: 1px solid #3c3c3c;
+    border-radius: 12px;
+    padding: 2px 4px 2px 10px;
+    font-size: 11px;
+    color: #e5e5e5;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+}
+.target-chip:hover {
+    background: #3c3c3c;
+    border-color: #5a5a5a;
+}
+.target-chip .target-chip-label {
+    pointer-events: none;
+}
+.target-chip .target-reset,
+.target-chip .target-remove {
+    background: transparent;
+    border: none;
+    color: #b3b3b3;
+    padding: 0 4px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+}
+.target-chip .target-reset:hover { color: #e5e5e5; }
+.target-chip .target-reset:disabled {
+    color: #555;
+    cursor: not-allowed;
+}
+.target-chip .target-remove { color: #ff8080; }
+.target-chip .target-remove:hover { color: #ff4040; }
+
+.target-add-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+.target-add-row select {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+}
+.target-add-row select:disabled {
+    color: #555;
+    cursor: not-allowed;
+}
+.target-add-row .target-add-btn {
+    background: #2c2c2c;
+    color: #e5e5e5;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.target-add-row .target-add-btn:hover:not(:disabled) {
+    background: #3c3c3c;
+}
+.target-add-row .target-add-btn:disabled {
+    color: #555;
+    cursor: not-allowed;
+}
+
+/* ===== Just-recorded pulse ===== */
+
+.seq-duration {
+    font-size: 10px;
+    color: #7a7a7a;
+    font-variant-numeric: tabular-nums;
+    padding: 0 4px;
+}
+
+@keyframes kfPulse {
+    0%   { background: #6750d4; }
+    100% { background: #232323; }
+}
+.kf-row.just-recorded > .kf-head {
+    animation: kfPulse 0.9s ease-out;
+}

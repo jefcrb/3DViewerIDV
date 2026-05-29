@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SCENE_CONFIG, DEFAULT_POSITIONS } from '../config.js';
+import { state as characterState } from '../characters/loader.js';
 
 export const state = {
     dummyModels: {
@@ -191,19 +192,39 @@ export function loadBlenderScene(scene, liveCamera) {
 }
 
 // Layer editor slot overrides on top of the dummy defaults. Called after the
-// registry has been hydrated from saved settings.
+// registry has been hydrated from saved settings AND whenever a slot changes.
+// Also nudges any already-loaded character model to the new transform so edits
+// are visible immediately in the scene.
 export function applyRegistrySlotsToCharacterPositions(registry) {
     const fromRegistry = registry.resolveCharacterPositions();
+    const updates = { hunter: null, survivors: [null, null, null, null] };
+
     if (fromRegistry.hunter) {
         state.characterPositions.hunter = fromRegistry.hunter;
+        updates.hunter = fromRegistry.hunter;
     } else if (state.dummyTransforms.hunter) {
         state.characterPositions.hunter = state.dummyTransforms.hunter;
     }
     for (let i = 0; i < 4; i++) {
         if (fromRegistry.survivors[i]) {
             state.characterPositions.survivors[i] = fromRegistry.survivors[i];
+            updates.survivors[i] = fromRegistry.survivors[i];
         } else if (state.dummyTransforms.survivors[i]) {
             state.characterPositions.survivors[i] = state.dummyTransforms.survivors[i];
+        }
+    }
+
+    // Push transforms to already-loaded character models
+    const hunterChar = characterState.loadedCharacters.hunter;
+    if (hunterChar?.model && updates.hunter) {
+        hunterChar.model.position.copy(updates.hunter.position);
+        hunterChar.model.rotation.copy(updates.hunter.rotation);
+    }
+    for (let i = 0; i < 4; i++) {
+        const char = characterState.loadedCharacters.survivors[i];
+        if (char?.model && updates.survivors[i]) {
+            char.model.position.copy(updates.survivors[i].position);
+            char.model.rotation.copy(updates.survivors[i].rotation);
         }
     }
 }
