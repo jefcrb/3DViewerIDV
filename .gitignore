@@ -3,3 +3,11 @@ plan/
 *comparison*
 wwwroot/assets/scene.glb
 wwwroot/viewer_settings.json
+
+# Character assets — downloaded at runtime from a GitHub release, not committed.
+# See release/assets-manifest.json for the source release URL + SHA256.
+wwwroot/hunters/
+wwwroot/survivors/
+
+# Local release-build output (zip + manifest staged for upload).
+release/

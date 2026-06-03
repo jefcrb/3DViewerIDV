@@ -32,6 +32,17 @@ export const SHADOW_MAP_TYPES = {
     VSM: 3
 };
 
+// THREE tone-mapping constants. Same rationale as SHADOW_MAP_TYPES.
+export const TONE_MAPPING_TYPES = {
+    None: THREE.NoToneMapping,
+    Linear: THREE.LinearToneMapping,
+    Reinhard: THREE.ReinhardToneMapping,
+    Cineon: THREE.CineonToneMapping,
+    ACESFilmic: THREE.ACESFilmicToneMapping,
+    AgX: THREE.AgXToneMapping ?? 6,
+    Neutral: THREE.NeutralToneMapping ?? 7
+};
+
 const WORLD_DEFAULTS = {
     backgroundColor: '#1a1a2e',
     shadowsEnabled: true,
@@ -39,7 +50,9 @@ const WORLD_DEFAULTS = {
     shadowMapSize: SHADOW_DEFAULTS.mapSize,
     shadowBias: SHADOW_DEFAULTS.bias,
     shadowNormalBias: SHADOW_DEFAULTS.normalBias,
-    shadowRadius: SHADOW_DEFAULTS.radius
+    shadowRadius: SHADOW_DEFAULTS.radius,
+    toneMapping: 'ACESFilmic',
+    toneMappingExposure: 1.0
 };
 
 function newId(prefix) {
@@ -120,6 +133,15 @@ class Registry extends EventTarget {
             const t = renderer.shadowMap.type;
             for (const [name, val] of Object.entries(SHADOW_MAP_TYPES)) {
                 if (val === t) { this.world.shadowMapType = name; break; }
+            }
+        }
+        if (renderer) {
+            const tm = renderer.toneMapping;
+            for (const [name, val] of Object.entries(TONE_MAPPING_TYPES)) {
+                if (val === tm) { this.world.toneMapping = name; break; }
+            }
+            if (typeof renderer.toneMappingExposure === 'number') {
+                this.world.toneMappingExposure = renderer.toneMappingExposure;
             }
         }
     }
@@ -433,6 +455,23 @@ class Registry extends EventTarget {
                         mats.forEach(m => { m.needsUpdate = true; });
                     }
                 });
+            }
+        }
+        if (this.rendererRef) {
+            const tmVal = TONE_MAPPING_TYPES[this.world.toneMapping];
+            if (tmVal != null && this.rendererRef.toneMapping !== tmVal) {
+                this.rendererRef.toneMapping = tmVal;
+                // Tone mapping is baked into each material's shader via a #define,
+                // so existing programs need a recompile to pick up the new mode.
+                this.scene?.traverse(obj => {
+                    if (obj.material) {
+                        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                        mats.forEach(m => { m.needsUpdate = true; });
+                    }
+                });
+            }
+            if (typeof this.world.toneMappingExposure === 'number') {
+                this.rendererRef.toneMappingExposure = this.world.toneMappingExposure;
             }
         }
         // Re-apply shadow params on all shadow-casting lights.

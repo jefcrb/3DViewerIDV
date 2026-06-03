@@ -1,5 +1,5 @@
 import { registry } from './registry.js';
-import { SHADOW_MAP_TYPES } from './registry.js';
+import { SHADOW_MAP_TYPES, TONE_MAPPING_TYPES } from './registry.js';
 
 const SHADOW_MAP_SIZES = [256, 512, 1024, 2048, 4096];
 
@@ -48,6 +48,22 @@ export function renderWorldPanel() {
                 </label>
             </div>
         </div>
+        <div class="editor-row">
+            <div class="row-head"><strong>Tone mapping</strong></div>
+            <div class="row-body">
+                <label>Mode
+                    <select id="worldToneMapping">
+                        ${Object.keys(TONE_MAPPING_TYPES).map(t =>
+                            `<option value="${t}" ${t === w.toneMapping ? 'selected' : ''}>${t}</option>`
+                        ).join('')}
+                    </select>
+                </label>
+                <label class="slider-row">Exposure
+                    <input type="range" id="worldToneExposure" min="0" max="4" step="0.01" value="${w.toneMappingExposure}">
+                    <span id="worldToneExposureValue">${w.toneMappingExposure.toFixed(2)}</span>
+                </label>
+            </div>
+        </div>
     `;
 
     pane.querySelector('#worldBgColor').oninput = (e) => {
@@ -82,5 +98,16 @@ export function renderWorldPanel() {
     radiusInput.oninput = () => {
         radiusLabel.textContent = parseFloat(radiusInput.value).toFixed(1);
         registry.updateWorld({ shadowRadius: parseFloat(radiusInput.value) });
+    };
+
+    pane.querySelector('#worldToneMapping').onchange = (e) => {
+        registry.updateWorld({ toneMapping: e.target.value });
+    };
+
+    const expInput = pane.querySelector('#worldToneExposure');
+    const expLabel = pane.querySelector('#worldToneExposureValue');
+    expInput.oninput = () => {
+        expLabel.textContent = parseFloat(expInput.value).toFixed(2);
+        registry.updateWorld({ toneMappingExposure: parseFloat(expInput.value) });
     };
 }

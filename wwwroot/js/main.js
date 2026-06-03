@@ -71,10 +71,10 @@ function animate(currentTime) {
 (async function() {
     try {
         const settings = await loadSettings();
-        const rendererType = settings?.rendering?.rendererType || 'webgl';
-        console.log('Using renderer:', rendererType);
-
-        renderer = await setupRenderer(canvas, rendererType);
+        // settings.rendering.rendererType is intentionally ignored: WebGPU is broken on
+        // many configurations and viewer_settings.json is gitignored, so a stale "webgpu"
+        // value would otherwise leave users with a non-functional viewer.
+        renderer = await setupRenderer(canvas, 'webgl');
         scene = setupScene(renderer);
         liveCamera = setupLiveCamera();
         editorCamera = setupEditorCamera();
