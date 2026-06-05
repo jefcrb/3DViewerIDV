@@ -19,9 +19,9 @@ export function renderCameraPanel() {
     const spec = registry.liveCamera;
     pane.innerHTML = `
         <div class="editor-row">
-            <div class="row-head"><strong>Live (Broadcast) Camera</strong>
-                <button id="liveCamSelect">⊕ Gizmo</button>
-                <button id="liveCamSnap">Snap to Editor</button>
+            <div class="row-head">
+                <strong>Live (Broadcast) Camera</strong>
+                <button id="liveCamSelect" class="select-btn" title="Attach gizmo">⊕</button>
             </div>
             <div class="row-body">
                 <label>Position
@@ -38,7 +38,9 @@ export function renderCameraPanel() {
                     <input type="range" min="10" max="120" step="1" value="${spec.fov}" id="liveCamFov">
                     <span id="liveCamFovValue">${spec.fov}°</span>
                 </label>
-                <button id="liveCamLookOrigin">Look at origin</button>
+                <div class="button-row">
+                    <button id="liveCamSnap">Snap to editor</button>
+                </div>
             </div>
         </div>
     `;
@@ -53,15 +55,6 @@ export function renderCameraPanel() {
             position: [pos.x, pos.y, pos.z],
             rotation: [rot.x, rot.y, rot.z],
             fov: editorCameraRef.fov
-        });
-    };
-
-    pane.querySelector('#liveCamLookOrigin').onclick = () => {
-        const cam = registry.liveCameraRef;
-        if (!cam) return;
-        cam.lookAt(0, 0, 0);
-        registry.updateLiveCamera({
-            rotation: [cam.rotation.x, cam.rotation.y, cam.rotation.z]
         });
     };
 

@@ -35,8 +35,11 @@ async function pollCharacterData() {
 
 function fireDiffEvents(jsonData) {
     const newHunterKey = characterKey(jsonData.hunter);
-    if (newHunterKey && newHunterKey !== lastHunterKey) {
-        if (lastHunterKey === null) {
+    if (newHunterKey !== lastHunterKey) {
+        if (newHunterKey === null) {
+            // had a hunter, now don't — fired only when going from something to nothing
+            fire('hunter_deselected', {});
+        } else if (lastHunterKey === null) {
             fire('hunter_selected', { name: jsonData.hunter?.name });
         } else {
             fire('hunter_changed', { name: jsonData.hunter?.name });
@@ -44,18 +47,25 @@ function fireDiffEvents(jsonData) {
     }
     lastHunterKey = newHunterKey;
 
-    let anyChanged = false;
+    let anySelected = false;
+    let anyDeselected = false;
     const survivors = jsonData.survivors || [];
     for (let i = 0; i < 4; i++) {
         const survivor = survivors[i];
         const newKey = characterKey(survivor);
-        if (newKey && newKey !== lastSurvivorKeys[i]) {
-            fire(`survivor_${i + 1}_selected`, { index: i, name: survivor?.name });
-            anyChanged = true;
+        if (newKey !== lastSurvivorKeys[i]) {
+            if (newKey === null) {
+                fire(`survivor_${i + 1}_deselected`, { index: i });
+                anyDeselected = true;
+            } else {
+                fire(`survivor_${i + 1}_selected`, { index: i, name: survivor?.name });
+                anySelected = true;
+            }
         }
         lastSurvivorKeys[i] = newKey;
     }
-    if (anyChanged) fire('survivor_any_selected', {});
+    if (anySelected) fire('survivor_any_selected', {});
+    if (anyDeselected) fire('survivor_any_deselected', {});
 }
 
 export function setupCharacterAPI(scene) {

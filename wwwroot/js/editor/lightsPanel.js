@@ -32,7 +32,7 @@ function lightRow(spec) {
         <div class="row-body">
             <label>Color <input type="color" class="color-input" value="${colorString(spec.color)}"></label>
             ${showGround ? `<label>Ground <input type="color" class="ground-input" value="${colorString(spec.groundColor)}"></label>` : ''}
-            <label class="slider-row">Intensity <input type="range" min="0" max="10" step="0.01" value="${spec.intensity}" class="intensity-input"><span class="intensity-value">${spec.intensity.toFixed(2)}</span></label>
+            <label>Intensity <input type="number" min="0" step="1" value="${spec.intensity}" class="intensity-input"></label>
             ${showPosition ? `
             <label>Pos
                 <input type="number" step="0.1" value="${spec.position[0]}" class="pos-x">
@@ -97,10 +97,7 @@ function lightRow(spec) {
             el.onchange = () => registry.updateLight(spec.id, { type: el.value });
         } else if (type === 'range' || type === 'number' || type === 'color' || type === 'text' || type === 'checkbox') {
             el.oninput = () => {
-                if (el.classList.contains('intensity-input')) {
-                    row.querySelector('.intensity-value').textContent = parseFloat(el.value).toFixed(2);
-                }
-                registry.updateLight(spec.id, readPartial());
+                registry.updateLight(spec.id, readPartial(), { trackSpotTarget: true });
             };
         }
     });
@@ -127,6 +124,7 @@ export function renderLightsPanel() {
     pane.appendChild(addBar);
     addBar.querySelector('#addLightBtn').onclick = () => {
         const type = addBar.querySelector('#newLightType').value;
-        registry.addLight({ type, name: `${type} Light`, intensity: 1.0, position: [0, 5, 0], target: [0, 0, 0] });
+        const id = registry.addLight({ type, name: `${type} Light`, intensity: 1.0, position: [0, 5, 0], target: [0, 0, 0] });
+        if (id) selectTarget(`light:${id}`);
     };
 }

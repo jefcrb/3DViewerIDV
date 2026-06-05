@@ -151,7 +151,7 @@ function animate(currentTime) {
                 canvas
             });
             window.__editor = editorMod;
-            document.getElementById('modeToggleBtn').style.display = 'inline-block';
+            document.getElementById('topActions').style.display = 'flex';
         }
 
         // Preload all character models in background

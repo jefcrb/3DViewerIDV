@@ -222,7 +222,7 @@ function applyLiveCameraSnapshot(vals) {
     }
 }
 
-function applySnapshot(snapshot) {
+export function applySnapshot(snapshot) {
     for (const id of Object.keys(snapshot.lights || {})) {
         applyLightSnapshot(id, snapshot.lights[id]);
     }
@@ -291,17 +291,47 @@ class Sequencer extends EventTarget {
 
     addSequence(spec = {}) {
         const id = spec.id || newId('seq');
+        // Easing is per-keyframe now. Each keyframe controls how it transitions to
+        // the NEXT keyframe ("eases out"). Default cubicInOut. On hydrate of older
+        // saves where easing was sequence-level, that value seeds every keyframe.
+        const seqLevelEasing = EASING_NAMES.includes(spec.easing) ? spec.easing : 'cubicInOut';
         const keyframes = Array.isArray(spec.keyframes)
-            ? spec.keyframes.map(k => ({ t: k.t, snapshot: k.snapshot }))
+            ? spec.keyframes.map(k => ({
+                t: k.t,
+                snapshot: k.snapshot,
+                easing: EASING_NAMES.includes(k.easing) ? k.easing : seqLevelEasing
+            }))
             : [];
-        const targets = Array.isArray(spec.targets)
-            ? [...spec.targets]
-            : inferTargetsFromKeyframes(keyframes);
+        // Each sequence animates exactly one target, picked at creation. Callers can
+        // pass `target` (preferred) or `targets[]` (back-compat with sequences saved
+        // before this constraint). Anything beyond the first target is dropped on
+        // next save; orphan snapshot data in keyframes is harmless and ignored.
+        let target = spec.target;
+        if (!target && Array.isArray(spec.targets) && spec.targets.length > 0) {
+            target = spec.targets[0];
+        }
+        if (!target) {
+            target = inferTargetsFromKeyframes(keyframes)[0] || null;
+        }
+        const targets = target ? [target] : [];
+        // Loop is now an explicit boolean on the sequence (not a magic 'loop' entry
+        // inside triggers). Migrate: if old saves have 'loop' in the trigger list,
+        // flip the bool and route the trigger to 'live_mode_entered' so the old
+        // "resume on entering live mode" behaviour keeps working.
+        let triggers = Array.isArray(spec.triggers) ? [...spec.triggers] : [];
+        let loop = !!spec.loop;
+        if (triggers.includes('loop')) {
+            loop = true;
+            triggers = triggers.filter(t => t !== 'loop');
+            if (!triggers.includes('live_mode_entered')) triggers.push('live_mode_entered');
+        }
+        const stopTriggers = Array.isArray(spec.stopTriggers) ? [...spec.stopTriggers] : [];
         const normalized = {
             id,
             name: spec.name || `sequence_${this.sequences.size + 1}`,
-            easing: EASING_NAMES.includes(spec.easing) ? spec.easing : 'cubicInOut',
-            triggers: Array.isArray(spec.triggers) ? [...spec.triggers] : [],
+            loop,
+            triggers,
+            stopTriggers,
             targets,
             keyframes
         };
@@ -317,6 +347,28 @@ class Sequencer extends EventTarget {
         let max = 0;
         for (const kf of seq.keyframes) if (kf.t > max) max = kf.t;
         return max;
+    }
+
+    // Deep-clone a sequence and register the copy under a new id. Used by the
+    // duplicate button in the panel header.
+    duplicateSequence(id) {
+        const seq = this.sequences.get(id);
+        if (!seq) return null;
+        const clone = {
+            name: `${seq.name}_copy`,
+            loop: !!seq.loop,
+            triggers: [...seq.triggers],
+            stopTriggers: [...(seq.stopTriggers || [])],
+            targets: [...seq.targets],
+            // JSON.stringify is enough — snapshots are plain arrays + numbers + strings.
+            // Each keyframe gets its own snapshot, so editing one copy won't bleed back.
+            keyframes: seq.keyframes.map(k => ({
+                t: k.t,
+                snapshot: JSON.parse(JSON.stringify(k.snapshot)),
+                easing: k.easing
+            }))
+        };
+        return this.addSequence(clone);
     }
 
     removeSequence(id) {
@@ -343,61 +395,21 @@ class Sequencer extends EventTarget {
         const snapshot = captureSnapshot(seq.targets);
         const idx = seq.keyframes.findIndex(k => Math.abs(k.t - t) < 0.001);
         if (idx >= 0) {
-            seq.keyframes[idx] = { t, snapshot };
+            // Preserve the existing easing when re-recording at the same time.
+            seq.keyframes[idx] = { t, snapshot, easing: seq.keyframes[idx].easing || 'cubicInOut' };
         } else {
-            seq.keyframes.push({ t, snapshot });
+            seq.keyframes.push({ t, snapshot, easing: 'cubicInOut' });
             seq.keyframes.sort((a, b) => a.t - b.t);
         }
         this._emit('seq:update', { id, spec: seq, recordedT: t });
     }
 
-    // Add a target to a sequence. Backfills every existing keyframe with the current
-    // registry state for that target so the new track has sensible starting values.
-    addTarget(seqId, target) {
+    setKeyframeEasing(seqId, t, easing) {
         const seq = this.sequences.get(seqId);
-        if (!seq) return;
-        if (seq.targets.includes(target)) return;
-        seq.targets.push(target);
-        const fill = captureSnapshot([target]);
-        for (const kf of seq.keyframes) {
-            // Clone so each keyframe has independent data — never share object references
-            // between keyframes (or one inline edit would mutate all of them).
-            if (target === 'liveCamera' && fill.liveCamera) {
-                kf.snapshot.liveCamera = JSON.parse(JSON.stringify(fill.liveCamera));
-            } else if (target.startsWith('light:')) {
-                const id = target.slice('light:'.length);
-                if (fill.lights[id]) {
-                    kf.snapshot.lights = kf.snapshot.lights || {};
-                    kf.snapshot.lights[id] = JSON.parse(JSON.stringify(fill.lights[id]));
-                }
-            } else if (target.startsWith('slot:')) {
-                const id = target.slice('slot:'.length);
-                if (fill.slots[id]) {
-                    kf.snapshot.slots = kf.snapshot.slots || {};
-                    kf.snapshot.slots[id] = JSON.parse(JSON.stringify(fill.slots[id]));
-                }
-            }
-        }
-        this._emit('seq:update', { id: seqId, spec: seq });
-    }
-
-    removeTarget(seqId, target) {
-        const seq = this.sequences.get(seqId);
-        if (!seq) return;
-        const before = seq.targets.length;
-        seq.targets = seq.targets.filter(t => t !== target);
-        if (seq.targets.length === before) return;
-        for (const kf of seq.keyframes) {
-            if (target === 'liveCamera') {
-                kf.snapshot.liveCamera = null;
-            } else if (target.startsWith('light:')) {
-                const id = target.slice('light:'.length);
-                if (kf.snapshot.lights) delete kf.snapshot.lights[id];
-            } else if (target.startsWith('slot:')) {
-                const id = target.slice('slot:'.length);
-                if (kf.snapshot.slots) delete kf.snapshot.slots[id];
-            }
-        }
+        if (!seq || !EASING_NAMES.includes(easing)) return;
+        const kf = seq.keyframes.find(k => Math.abs(k.t - t) < 0.001);
+        if (!kf) return;
+        kf.easing = easing;
         this._emit('seq:update', { id: seqId, spec: seq });
     }
 
@@ -468,7 +480,7 @@ class Sequencer extends EventTarget {
         const newT = lastT + 1;
         // Deep clone so the new keyframe is fully independent of the source.
         const cloned = JSON.parse(JSON.stringify(source.snapshot));
-        seq.keyframes.push({ t: newT, snapshot: cloned });
+        seq.keyframes.push({ t: newT, snapshot: cloned, easing: source.easing || 'cubicInOut' });
         seq.keyframes.sort((a, b) => a.t - b.t);
         this._emit('seq:update', { id: seqId, spec: seq, recordedT: newT });
         return newT;
@@ -545,11 +557,12 @@ class Sequencer extends EventTarget {
 
             // Sequences with zero/no-length play their single keyframe once and then end
             // (unless looping, in which case they stay parked on that frame).
+            // On natural finish the scene is left as the animation set it — we no
+            // longer revert to the registry. To rewind, use the ↺ button on the target.
             if (duration <= 0) {
                 this._tickSequence(seq, 0);
                 if (runner.iterationCount !== Infinity) {
                     this.active.delete(id);
-                    restoreFromRegistry(animatedKeysOf(seq));
                     this._emit('seq:stop', { id });
                 }
                 continue;
@@ -560,7 +573,10 @@ class Sequencer extends EventTarget {
 
             if (runner.iterationCount !== Infinity && iterations >= runner.iterationCount) {
                 this.active.delete(id);
-                restoreFromRegistry(animatedKeysOf(seq));
+                // Park on the final keyframe so the scene reflects the animation's
+                // end state cleanly, rather than wherever the previous tick landed.
+                const last = seq.keyframes[seq.keyframes.length - 1];
+                if (last) applySnapshot(last.snapshot);
                 this._emit('seq:stop', { id });
                 continue;
             }
@@ -589,7 +605,8 @@ class Sequencer extends EventTarget {
         if (t >= b.t) { applySnapshot(b.snapshot); return; }
 
         const localU = (t - a.t) / (b.t - a.t);
-        const eased = ease(seq.easing, localU);
+        // `a.easing` controls the curve from a to b ("ease out of a").
+        const eased = ease(a.easing || 'cubicInOut', localU);
         applySnapshot(interpolateSnapshot(a.snapshot, b.snapshot, eased));
     }
 
@@ -597,10 +614,15 @@ class Sequencer extends EventTarget {
         return Array.from(this.sequences.values()).map(s => ({
             id: s.id,
             name: s.name,
-            easing: s.easing,
+            loop: !!s.loop,
             triggers: [...s.triggers],
+            stopTriggers: [...(s.stopTriggers || [])],
             targets: [...s.targets],
-            keyframes: s.keyframes.map(k => ({ t: k.t, snapshot: k.snapshot }))
+            keyframes: s.keyframes.map(k => ({
+                t: k.t,
+                snapshot: k.snapshot,
+                easing: k.easing || 'cubicInOut'
+            }))
         }));
     }
 

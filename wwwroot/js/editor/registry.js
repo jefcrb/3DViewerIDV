@@ -51,6 +51,12 @@ const WORLD_DEFAULTS = {
     shadowBias: SHADOW_DEFAULTS.bias,
     shadowNormalBias: SHADOW_DEFAULTS.normalBias,
     shadowRadius: SHADOW_DEFAULTS.radius,
+    // Directional-light orthographic shadow frustum. Larger bounds = shadows cover
+    // more of the scene at the cost of per-pixel sharpness (compensate with a
+    // higher shadowMapSize). Far controls how deep along the light direction the
+    // shadow camera reaches. Per-light extras still override these when set.
+    directionalShadowBounds: SHADOW_DEFAULTS.cameraBounds,
+    directionalShadowFar: SHADOW_DEFAULTS.far,
     toneMapping: 'ACESFilmic',
     toneMappingExposure: 1.0
 };
@@ -81,7 +87,9 @@ function configureShadow(light, extras = {}, world = WORLD_DEFAULTS) {
     light.shadow.mapSize.width = mapSize;
     light.shadow.mapSize.height = mapSize;
     light.shadow.camera.near = SHADOW_DEFAULTS.near;
-    light.shadow.camera.far = SHADOW_DEFAULTS.far;
+    light.shadow.camera.far = extras.shadowFar
+        ?? world.directionalShadowFar
+        ?? SHADOW_DEFAULTS.far;
     light.shadow.bias = world.shadowBias ?? SHADOW_DEFAULTS.bias;
     light.shadow.normalBias = world.shadowNormalBias ?? SHADOW_DEFAULTS.normalBias;
     light.shadow.radius = world.shadowRadius ?? SHADOW_DEFAULTS.radius;
@@ -89,15 +97,19 @@ function configureShadow(light, extras = {}, world = WORLD_DEFAULTS) {
         light.shadow.map.dispose();
         light.shadow.map = null;
     }
-    if (light.shadow.camera.updateProjectionMatrix) {
-        light.shadow.camera.updateProjectionMatrix();
-    }
     if (light.isDirectionalLight) {
-        const b = extras.shadowBounds ?? SHADOW_DEFAULTS.cameraBounds;
+        const b = extras.shadowBounds
+            ?? world.directionalShadowBounds
+            ?? SHADOW_DEFAULTS.cameraBounds;
         light.shadow.camera.left = -b;
         light.shadow.camera.right = b;
         light.shadow.camera.top = b;
         light.shadow.camera.bottom = -b;
+    }
+    // Update the projection matrix AFTER bounds/far are set — otherwise the new
+    // frustum won't take effect until the next implicit update.
+    if (light.shadow.camera.updateProjectionMatrix) {
+        light.shadow.camera.updateProjectionMatrix();
     }
 }
 
@@ -178,9 +190,36 @@ class Registry extends EventTarget {
         this.emit('lights:remove', { id });
     }
 
-    updateLight(id, partial) {
+    updateLight(id, partial, opts = {}) {
         const entry = this.lights.get(id);
         if (!entry) return;
+        // For spot lights: when the caller moves the position interactively but
+        // doesn't actively change the target, shift the target by the same X/Z
+        // delta so the cone keeps its aim direction. Y is left alone so a downward-
+        // pointing spot can be lifted/lowered without altering where it hits the
+        // floor. Off by default — only the gizmo and the lights-panel inputs opt in.
+        // Snapshot restores (preview/playback) must NOT track, since they need
+        // both position and target written verbatim from the keyframe.
+        if (opts.trackSpotTarget && entry.spec.type === 'Spot' && partial.position) {
+            const newPos = vecToArr(partial.position);
+            const oldPos = entry.spec.position;
+            const oldTgt = entry.spec.target;
+            const targetSupplied = Array.isArray(partial.target) || (partial.target && typeof partial.target === 'object');
+            const targetUnchanged = !targetSupplied || (() => {
+                const t = vecToArr(partial.target);
+                return Math.abs(t[0] - oldTgt[0]) < 1e-6
+                    && Math.abs(t[1] - oldTgt[1]) < 1e-6
+                    && Math.abs(t[2] - oldTgt[2]) < 1e-6;
+            })();
+            if (targetUnchanged) {
+                const dx = newPos[0] - oldPos[0];
+                const dz = newPos[2] - oldPos[2];
+                partial = {
+                    ...partial,
+                    target: [oldTgt[0] + dx, oldTgt[1], oldTgt[2] + dz]
+                };
+            }
+        }
         const newSpec = { ...entry.spec, ...partial };
         if (partial.type && partial.type !== entry.spec.type) {
             this.removeLight(id);

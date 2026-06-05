@@ -9,6 +9,7 @@ import { renderWorldPanel } from './worldPanel.js';
 import { saveSettings, exportSettings, importSettings } from '../storage/settingsStorage.js';
 import { sequencer } from '../animation/sequencer.js';
 import { setFiringAllowed, fire } from '../animation/triggers.js';
+import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
 
 let mode = 'live';
 let editorCamera = null;
@@ -44,6 +45,7 @@ export async function setMode(next) {
     const isEditor = mode === 'editor';
     if (orbitControls) orbitControls.enabled = isEditor;
     if (cameraHelper) cameraHelper.visible = isEditor;
+    setHelpersVisible(isEditor);
     if (transformControls) {
         if (!isEditor) detachGizmo();
         transformControls.visible = isEditor;
@@ -57,10 +59,11 @@ export async function setMode(next) {
 
     // Editor mode disables auto-trigger firing and stops any running sequences so
     // the user can edit without their changes being overwritten. Live mode resumes
-    // auto-triggers and fires `loop` so looping sequences kick back in.
+    // auto-triggers and fires `live_mode_entered` — sequences (looping or not) that
+    // want to (re)start on mode change can subscribe to it.
     setFiringAllowed(!isEditor);
     if (!isEditor) {
-        fire('loop', { reason: 'mode_switch_to_live' });
+        fire('live_mode_entered', { reason: 'mode_switch_to_live' });
     }
 }
 
@@ -174,7 +177,7 @@ function wireGizmoTransforms() {
             const entry = registry.getLight(id);
             if (entry) {
                 const pos = entry.threeObject.position;
-                registry.updateLight(id, { position: [pos.x, pos.y, pos.z] });
+                registry.updateLight(id, { position: [pos.x, pos.y, pos.z] }, { trackSpotTarget: true });
             }
             return;
         }
@@ -269,13 +272,10 @@ function buildHeader(panel) {
     header.innerHTML = `
         <h3>3D EDITOR</h3>
         <div class="editor-actions">
-            <button id="gizmoTranslate" title="Translate (W)">Move</button>
-            <button id="gizmoRotate" title="Rotate (E)">Rot</button>
-            <button id="gizmoScale" title="Scale (R)">Scale</button>
-            <button id="gizmoDetach" title="Deselect (Esc)">×</button>
-            <button id="exportBtn" title="Download viewer_settings.json">Export</button>
-            <button id="importBtn" title="Replace settings from a JSON file">Import</button>
-            <input id="importFile" type="file" accept="application/json,.json" style="display:none">
+            <button id="gizmoTranslate" class="gizmo-btn" title="Translate (W)">✥</button>
+            <button id="gizmoRotate" class="gizmo-btn" title="Rotate (E)">↻</button>
+            <button id="gizmoScale" class="gizmo-btn" title="Scale (R)">⤢</button>
+            <button id="gizmoDetach" class="gizmo-btn" title="Deselect (Esc)">×</button>
             <button id="saveAllBtn" title="Save all (auto-saves on change)">Save</button>
         </div>
     `;
@@ -286,9 +286,19 @@ function buildHeader(panel) {
     header.querySelector('#gizmoScale').onclick = () => transformControls.setMode('scale');
     header.querySelector('#gizmoDetach').onclick = () => detachGizmo();
     header.querySelector('#saveAllBtn').onclick = () => saveEditorState();
-    header.querySelector('#exportBtn').onclick = () => exportSettings();
-    const fileInput = header.querySelector('#importFile');
-    header.querySelector('#importBtn').onclick = () => fileInput.click();
+}
+
+// Export/Import buttons live in #topActions (scene.html), next to the mode toggle,
+// so they're accessible from both Live and Editor views. Wired up here because
+// importing needs to cancel the autosave timer scoped to this module.
+function wireTopActions() {
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const fileInput = document.getElementById('importFile');
+    if (!exportBtn || !importBtn || !fileInput) return;
+
+    exportBtn.onclick = () => exportSettings();
+    importBtn.onclick = () => fileInput.click();
     fileInput.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -318,7 +328,7 @@ function buildTabs(panel) {
         <button class="tab-btn" data-tab="slots">Slots</button>
         <button class="tab-btn" data-tab="cameras">Cameras</button>
         <button class="tab-btn" data-tab="world">World</button>
-        <button class="tab-btn" data-tab="animations">Animations</button>
+        <button class="tab-btn" data-tab="animations">Animations (BETA)</button>
     `;
     panel.appendChild(tabs);
 
@@ -366,6 +376,11 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     scene.add(transformControls);
     wireGizmoTransforms();
 
+    // Spawn helpers for any lights the registry already holds, and subscribe so
+    // future lights get helpers automatically. Initial visibility matches the
+    // mode setMode() will apply below.
+    initLightHelpers(scene);
+
     const toggleBtn = document.getElementById('modeToggleBtn');
     if (toggleBtn) {
         toggleBtn.onclick = () => setMode(mode === 'editor' ? 'live' : 'editor');
@@ -375,6 +390,7 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     panel.innerHTML = '';
     buildHeader(panel);
     buildTabs(panel);
+    wireTopActions();
 
     renderLightsPanel();
     renderSlotsPanel();

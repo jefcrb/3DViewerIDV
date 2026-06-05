@@ -46,6 +46,14 @@ export function renderWorldPanel() {
                     <input type="range" id="worldShadowRadius" min="0" max="16" step="0.5" value="${w.shadowRadius}">
                     <span id="worldShadowRadiusValue">${w.shadowRadius.toFixed(1)}</span>
                 </label>
+                <label class="slider-row" title="Half-width of the directional-light shadow frustum. Larger = shadows cover more ground but get blockier; bump Map size to compensate.">Directional bounds
+                    <input type="range" id="worldDirShadowBounds" min="5" max="60" step="1" value="${w.directionalShadowBounds}">
+                    <span id="worldDirShadowBoundsValue">${w.directionalShadowBounds.toFixed(0)}</span>
+                </label>
+                <label class="slider-row" title="Far plane of the directional shadow camera. Larger = shadows reach further along the light direction; may need a small bias bump.">Directional far
+                    <input type="range" id="worldDirShadowFar" min="20" max="200" step="5" value="${w.directionalShadowFar}">
+                    <span id="worldDirShadowFarValue">${w.directionalShadowFar.toFixed(0)}</span>
+                </label>
             </div>
         </div>
         <div class="editor-row">
@@ -98,6 +106,20 @@ export function renderWorldPanel() {
     radiusInput.oninput = () => {
         radiusLabel.textContent = parseFloat(radiusInput.value).toFixed(1);
         registry.updateWorld({ shadowRadius: parseFloat(radiusInput.value) });
+    };
+
+    const dirBoundsInput = pane.querySelector('#worldDirShadowBounds');
+    const dirBoundsLabel = pane.querySelector('#worldDirShadowBoundsValue');
+    dirBoundsInput.oninput = () => {
+        dirBoundsLabel.textContent = parseFloat(dirBoundsInput.value).toFixed(0);
+        registry.updateWorld({ directionalShadowBounds: parseFloat(dirBoundsInput.value) });
+    };
+
+    const dirFarInput = pane.querySelector('#worldDirShadowFar');
+    const dirFarLabel = pane.querySelector('#worldDirShadowFarValue');
+    dirFarInput.oninput = () => {
+        dirFarLabel.textContent = parseFloat(dirFarInput.value).toFixed(0);
+        registry.updateWorld({ directionalShadowFar: parseFloat(dirFarInput.value) });
     };
 
     pane.querySelector('#worldToneMapping').onchange = (e) => {

@@ -25,7 +25,12 @@
         <p id="errorMessage"></p>
     </div>
 
-    <button id="modeToggleBtn" style="display:none;">Switch to Editor</button>
+    <div id="topActions" style="display:none;">
+        <button id="modeToggleBtn">Switch to Editor</button>
+        <button id="exportBtn" title="Download viewer_settings.json">Export</button>
+        <button id="importBtn" title="Replace settings from a JSON file">Import</button>
+        <input id="importFile" type="file" accept="application/json,.json" style="display:none">
+    </div>
     <div id="editorPanel" style="display:none;"></div>
 
     <script type="module" src="js/main.js"></script>

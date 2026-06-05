@@ -85,8 +85,9 @@ export function renderSlotsPanel() {
         `;
         addBar.querySelector('#addSlotBtn').onclick = () => {
             const role = addBar.querySelector('#newSlotRole').value;
-            registry.addSlot({ role, label: role, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] });
+            const id = registry.addSlot({ role, label: role, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] });
             applyRegistrySlotsToCharacterPositions(registry);
+            if (id) selectTarget(`slot:${id}`);
         };
     }
     pane.appendChild(addBar);
