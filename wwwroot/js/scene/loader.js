@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SCENE_CONFIG, DEFAULT_POSITIONS } from '../config.js';
+import { state as characterState } from '../characters/loader.js';
 
 export const state = {
     dummyModels: {
+        hunter: null,
+        survivors: []
+    },
+    dummyTransforms: {
         hunter: null,
         survivors: []
     },
@@ -13,6 +18,22 @@ export const state = {
     },
     sceneLoaded: false
 };
+
+function cloneTransform(t) {
+    if (!t) return null;
+    return {
+        position: t.position.clone(),
+        rotation: t.rotation.clone(),
+        scale: t.scale.clone()
+    };
+}
+
+function cloneTransforms(t) {
+    return {
+        hunter: cloneTransform(t.hunter),
+        survivors: t.survivors.map(cloneTransform)
+    };
+}
 
 function configureLightShadow(light, mapSize = 1024) {
     light.castShadow = true;
@@ -40,6 +61,18 @@ function findDummyModels(loadedScene) {
     return { hunter, survivors };
 }
 
+// Decompose dummy.matrixWorld into world-space position/quaternion/scale,
+// then convert quaternion → Euler so the rest of the codebase can keep using Euler.
+function worldTransformFromDummy(dummy) {
+    dummy.updateWorldMatrix(true, false);
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    dummy.matrixWorld.decompose(position, quaternion, scale);
+    const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+    return { position, rotation, scale };
+}
+
 function getTransformsFromDummies(dummies) {
     const transforms = {
         hunter: null,
@@ -47,11 +80,7 @@ function getTransformsFromDummies(dummies) {
     };
 
     if (dummies.hunter) {
-        transforms.hunter = {
-            position: dummies.hunter.getWorldPosition(new THREE.Vector3()),
-            rotation: dummies.hunter.rotation.clone(),
-            scale: dummies.hunter.scale.clone()
-        };
+        transforms.hunter = worldTransformFromDummy(dummies.hunter);
     } else {
         transforms.hunter = {
             position: DEFAULT_POSITIONS.hunter.clone(),
@@ -62,11 +91,7 @@ function getTransformsFromDummies(dummies) {
 
     for (let i = 0; i < 4; i++) {
         if (dummies.survivors[i]) {
-            transforms.survivors.push({
-                position: dummies.survivors[i].getWorldPosition(new THREE.Vector3()),
-                rotation: dummies.survivors[i].rotation.clone(),
-                scale: dummies.survivors[i].scale.clone()
-            });
+            transforms.survivors.push(worldTransformFromDummy(dummies.survivors[i]));
         } else {
             transforms.survivors.push({
                 position: DEFAULT_POSITIONS.survivors[i].clone(),
@@ -88,7 +113,7 @@ export function hideDummyModels(dummies) {
     });
 }
 
-export function loadBlenderScene(scene, camera) {
+export function loadBlenderScene(scene, liveCamera) {
     return new Promise((resolve, reject) => {
         console.log(`Loading Blender scene from: ${SCENE_CONFIG.sceneUrl}`);
 
@@ -106,27 +131,14 @@ export function loadBlenderScene(scene, camera) {
                         child.castShadow = true;
                         child.receiveShadow = true;
 
-                        if (child.material) {
-                            console.log(`Mesh: ${child.name}`);
-                            console.log(`  Material:`, child.material.type);
-                            console.log(`  Color:`, child.material.color);
-
-                            if (child.material.emissive) {
-                                console.log(`  Emissive BEFORE:`, child.material.emissive, 'Intensity:', child.material.emissiveIntensity);
-
-                                child.material.emissive.setHex(0x000000);
-                                child.material.emissiveIntensity = 0;
-
-                                console.log(`  Emissive AFTER:`, child.material.emissive, 'Intensity:', child.material.emissiveIntensity);
-                            }
-
-                            console.log(`  CastShadow: ${child.castShadow}, ReceiveShadow: ${child.receiveShadow}`);
+                        if (child.material && child.material.emissive) {
+                            child.material.emissive.setHex(0x000000);
+                            child.material.emissiveIntensity = 0;
                         }
                     }
 
                     if (child.isLight) {
                         lightCount++;
-
                         const originalIntensity = child.intensity;
                         child.intensity *= SCENE_CONFIG.lightIntensityMultiplier;
 
@@ -138,42 +150,38 @@ export function loadBlenderScene(scene, camera) {
                             child.shadow.camera.right = 20;
                             child.shadow.camera.top = 20;
                             child.shadow.camera.bottom = -20;
-                            console.log(`  Configured DirectionalLight: ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
-                        } else if (child.isPointLight) {
+                        } else if (child.isPointLight || child.isSpotLight) {
                             configureLightShadow(child);
-                            console.log(`  Configured PointLight: ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
-                        } else if (child.isSpotLight) {
-                            configureLightShadow(child);
-                            console.log(`  Configured SpotLight: ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
-                        } else {
-                            console.log(`  Found light: ${child.type}, ${originalIntensity.toFixed(2)} → ${child.intensity.toFixed(2)}`);
                         }
                     }
                 });
 
                 if (lightCount === 0) {
-                    console.warn('No lights found in Blender scene (studio lights will handle illumination)');
+                    console.warn('No lights in Blender scene (studio lights handle illumination)');
                 } else {
-                    console.log(`Found and configured ${lightCount} light(s) from Blender`);
+                    console.log(`Configured ${lightCount} light(s) from Blender`);
                 }
 
-                if (gltf.cameras && gltf.cameras.length > 0) {
+                if (gltf.cameras && gltf.cameras.length > 0 && liveCamera) {
                     const blenderCamera = gltf.cameras[0];
-                    camera.position.copy(blenderCamera.position);
-                    camera.rotation.copy(blenderCamera.rotation);
-                    console.log('Using camera from Blender scene');
+                    liveCamera.position.copy(blenderCamera.position);
+                    liveCamera.rotation.copy(blenderCamera.rotation);
+                    console.log('Using camera from Blender scene for liveCamera');
                 }
 
                 state.dummyModels = findDummyModels(gltf.scene);
-                state.characterPositions = getTransformsFromDummies(state.dummyModels);
+                state.dummyTransforms = getTransformsFromDummies(state.dummyModels);
+                state.characterPositions = cloneTransforms(state.dummyTransforms);
                 hideDummyModels(state.dummyModels);
 
                 state.sceneLoaded = true;
                 resolve();
             },
             (progress) => {
-                const percent = (progress.loaded / progress.total) * 100;
-                console.log(`Loading: ${percent.toFixed(1)}%`);
+                if (progress.total) {
+                    const percent = (progress.loaded / progress.total) * 100;
+                    console.log(`Loading: ${percent.toFixed(1)}%`);
+                }
             },
             (error) => {
                 console.error('Failed to load Blender scene:', error);
@@ -181,6 +189,44 @@ export function loadBlenderScene(scene, camera) {
             }
         );
     });
+}
+
+// Layer editor slot overrides on top of the dummy defaults. Called after the
+// registry has been hydrated from saved settings AND whenever a slot changes.
+// Also nudges any already-loaded character model to the new transform so edits
+// are visible immediately in the scene.
+export function applyRegistrySlotsToCharacterPositions(registry) {
+    const fromRegistry = registry.resolveCharacterPositions();
+    const updates = { hunter: null, survivors: [null, null, null, null] };
+
+    if (fromRegistry.hunter) {
+        state.characterPositions.hunter = fromRegistry.hunter;
+        updates.hunter = fromRegistry.hunter;
+    } else if (state.dummyTransforms.hunter) {
+        state.characterPositions.hunter = state.dummyTransforms.hunter;
+    }
+    for (let i = 0; i < 4; i++) {
+        if (fromRegistry.survivors[i]) {
+            state.characterPositions.survivors[i] = fromRegistry.survivors[i];
+            updates.survivors[i] = fromRegistry.survivors[i];
+        } else if (state.dummyTransforms.survivors[i]) {
+            state.characterPositions.survivors[i] = state.dummyTransforms.survivors[i];
+        }
+    }
+
+    // Push transforms to already-loaded character models
+    const hunterChar = characterState.loadedCharacters.hunter;
+    if (hunterChar?.model && updates.hunter) {
+        hunterChar.model.position.copy(updates.hunter.position);
+        hunterChar.model.rotation.copy(updates.hunter.rotation);
+    }
+    for (let i = 0; i < 4; i++) {
+        const char = characterState.loadedCharacters.survivors[i];
+        if (char?.model && updates.survivors[i]) {
+            char.model.position.copy(updates.survivors[i].position);
+            char.model.rotation.copy(updates.survivors[i].rotation);
+        }
+    }
 }
 
 export function createMinimalFallbackScene(scene) {
@@ -197,7 +243,7 @@ export function createMinimalFallbackScene(scene) {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    state.characterPositions = {
+    state.dummyTransforms = {
         hunter: {
             position: DEFAULT_POSITIONS.hunter.clone(),
             rotation: new THREE.Euler(0, 0, 0),
@@ -209,6 +255,7 @@ export function createMinimalFallbackScene(scene) {
             scale: new THREE.Vector3(1, 1, 1)
         }))
     };
-
+    state.characterPositions = state.dummyTransforms;
+    state.sceneLoaded = true;
     console.log('Fallback scene created');
 }

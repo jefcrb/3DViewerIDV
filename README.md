@@ -1,7 +1,7 @@
 # IDV 3D graphics customization
 
 [简体中文](README_CN.md)
-This project is a plugin for [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf) to support 3D graphics. Scenes can be edited with Blender. Read below for instructions.
+This project is a plugin for [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf) to support 3D graphics.
 
 **!! This project is new and only tested on my own PC and full of bugs, feel free to give feedback (discord: dostojefsky)**
 
@@ -9,7 +9,7 @@ This project is a plugin for [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-
 
 ## Setup
 
-1. Install [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf/releases/tag/v2.1.0-beta%2B1e61260)
+1. Install [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf/releases/tag/v2.1.0-beta%2B1e61260) and install from plugin store, or:
 2. Clone this repository (or download as zip and extract):
    ```
    git clone git@github.com:jefcrb/3DViewerIDV.git
@@ -19,59 +19,22 @@ This project is a plugin for [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-
    mv 3DViewerIDV %APPDATA%\neo-bpsys-wpf\Plugins
    ```
 
+   
+
 ## Quick Start
-
-1. Download Blender 3.0+ from https://www.blender.org/download/
-2. Open `template.blend` in Blender (File > Open)
-3. Edit lighting, camera, or environment as needed
-4. Export as GLB (File > Export > glTF 2.0)
-5. Copy `scene.glb` to `wwwroot/assets/`
-
-## Template
-
-The `template.blend` file contains:
-
-- **5 Dummy Models**
-  - `_HUNTER` - Back center position
-  - `_SURVIVOR_1` - Front left
-  - `_SURVIVOR_2` - Front center-left
-  - `_SURVIVOR_3` - Front center-right
-  - `_SURVIVOR_4` - Front right
-
-## Exporting Your Scene
-
-### Export Steps
-
-1. **File > Export > glTF 2.0 (.glb)**
-2. **File name**: `scene.glb`
-3. **CRITICAL SETTINGS** (right panel):
-
-#### Must Check These:
-- **Format**: glTF Binary (.glb)
-- **Include > Cameras**
-- **Include > Punctual Lights**
-- **Transform > +Y Up**
-- **Geometry > Apply Modifiers**
-- **Geometry > UVs**
-- **Geometry > Normals**
-- **Materials**: Export
-
-#### Optional:
-- **Compression**: Enables for smaller file size
-- **Remember Export Settings**: Saves settings for next time
-
-4. **Click "Export glTF 2.0"**
-
-### Copy to Project
-
-Copy the exported file to:
-```
-%APPDATA%\neo-bpsys-wpf\Plugins\3DViewerIDV\wwwroot\assets
-```
-as scene.glb
-
-## Settings
-After installing the plugin, 3DViewerIDV settings page can be found. From here you can host a web browser source for OBS.
 ![settingspage](assets/settingspage.png)
-Access the dev page at `http://localhost:{port}?dev=true` to find additional settings
 
+1. Upload your own .glb scene or use the built-in one, you can edit it using 3D editing software like Blender or [threejs editor](https://threejs.org/editor/)
+2. Download the character models
+3. Start dev server and open the url http://localhost:9090?dev=true
+4. Edit components, add characters, create animations as you like
+5. Preview your creation
+6. Configure OBS to use the OBS url as a browser source
+
+
+## Features
+
+Configure your own lighting, camera positions renderer settings and more in the dev panel.
+Create your own keyframe animations to move lights or the camera based on various triggers.
+![Camera moves when hunter is selected](assets/showcase2.gif)
+![Light moves forever](assets/showcase3.gif)
