@@ -1,5 +1,6 @@
 import { registry } from './registry.js';
 import { SHADOW_MAP_TYPES, TONE_MAPPING_TYPES } from './registry.js';
+import { t } from '../i18n.js';
 
 const SHADOW_MAP_SIZES = [256, 512, 1024, 2048, 4096];
 
@@ -9,64 +10,64 @@ export function renderWorldPanel() {
     const w = registry.world;
     pane.innerHTML = `
         <div class="editor-row">
-            <div class="row-head"><strong>Background</strong></div>
+            <div class="row-head"><strong>${t('world.background')}</strong></div>
             <div class="row-body">
-                <label>Skybox color
+                <label>${t('world.skyboxColor')}
                     <input type="color" id="worldBgColor" value="${w.backgroundColor}">
                 </label>
             </div>
         </div>
         <div class="editor-row">
-            <div class="row-head"><strong>Shadows</strong></div>
+            <div class="row-head"><strong>${t('world.shadows')}</strong></div>
             <div class="row-body">
-                <label><input type="checkbox" id="worldShadowsEnabled" ${w.shadowsEnabled ? 'checked' : ''}> Enabled</label>
-                <label>Filter
+                <label><input type="checkbox" id="worldShadowsEnabled" ${w.shadowsEnabled ? 'checked' : ''}> ${t('world.enabled')}</label>
+                <label>${t('world.filter')}
                     <select id="worldShadowType">
-                        ${Object.keys(SHADOW_MAP_TYPES).map(t =>
-                            `<option value="${t}" ${t === w.shadowMapType ? 'selected' : ''}>${t}</option>`
+                        ${Object.keys(SHADOW_MAP_TYPES).map(name =>
+                            `<option value="${name}" ${name === w.shadowMapType ? 'selected' : ''}>${name}</option>`
                         ).join('')}
                     </select>
                 </label>
-                <label>Map size
+                <label>${t('world.mapSize')}
                     <select id="worldShadowMapSize">
                         ${SHADOW_MAP_SIZES.map(s =>
                             `<option value="${s}" ${s === w.shadowMapSize ? 'selected' : ''}>${s}×${s}</option>`
                         ).join('')}
                     </select>
                 </label>
-                <label class="slider-row">Bias
+                <label class="slider-row">${t('world.bias')}
                     <input type="range" id="worldShadowBias" min="-0.01" max="0.01" step="0.0001" value="${w.shadowBias}">
                     <span id="worldShadowBiasValue">${w.shadowBias.toFixed(4)}</span>
                 </label>
-                <label class="slider-row">Normal bias
+                <label class="slider-row">${t('world.normalBias')}
                     <input type="range" id="worldShadowNormalBias" min="0" max="0.5" step="0.001" value="${w.shadowNormalBias}">
                     <span id="worldShadowNormalBiasValue">${w.shadowNormalBias.toFixed(3)}</span>
                 </label>
-                <label class="slider-row">Softness (radius)
+                <label class="slider-row">${t('world.softness')}
                     <input type="range" id="worldShadowRadius" min="0" max="16" step="0.5" value="${w.shadowRadius}">
                     <span id="worldShadowRadiusValue">${w.shadowRadius.toFixed(1)}</span>
                 </label>
-                <label class="slider-row" title="Half-width of the directional-light shadow frustum. Larger = shadows cover more ground but get blockier; bump Map size to compensate.">Directional bounds
+                <label class="slider-row">${t('world.dirBounds')}
                     <input type="range" id="worldDirShadowBounds" min="5" max="60" step="1" value="${w.directionalShadowBounds}">
                     <span id="worldDirShadowBoundsValue">${w.directionalShadowBounds.toFixed(0)}</span>
                 </label>
-                <label class="slider-row" title="Far plane of the directional shadow camera. Larger = shadows reach further along the light direction; may need a small bias bump.">Directional far
+                <label class="slider-row">${t('world.dirFar')}
                     <input type="range" id="worldDirShadowFar" min="20" max="200" step="5" value="${w.directionalShadowFar}">
                     <span id="worldDirShadowFarValue">${w.directionalShadowFar.toFixed(0)}</span>
                 </label>
             </div>
         </div>
         <div class="editor-row">
-            <div class="row-head"><strong>Tone mapping</strong></div>
+            <div class="row-head"><strong>${t('world.toneMapping')}</strong></div>
             <div class="row-body">
-                <label>Mode
+                <label>${t('world.toneMode')}
                     <select id="worldToneMapping">
-                        ${Object.keys(TONE_MAPPING_TYPES).map(t =>
-                            `<option value="${t}" ${t === w.toneMapping ? 'selected' : ''}>${t}</option>`
+                        ${Object.keys(TONE_MAPPING_TYPES).map(name =>
+                            `<option value="${name}" ${name === w.toneMapping ? 'selected' : ''}>${name}</option>`
                         ).join('')}
                     </select>
                 </label>
-                <label class="slider-row">Exposure
+                <label class="slider-row">${t('world.exposure')}
                     <input type="range" id="worldToneExposure" min="0" max="4" step="0.01" value="${w.toneMappingExposure}">
                     <span id="worldToneExposureValue">${w.toneMappingExposure.toFixed(2)}</span>
                 </label>

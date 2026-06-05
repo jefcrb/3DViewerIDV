@@ -10,6 +10,7 @@ import { saveSettings, exportSettings, importSettings } from '../storage/setting
 import { sequencer } from '../animation/sequencer.js';
 import { setFiringAllowed, fire } from '../animation/triggers.js';
 import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
+import { t, toggleLanguage } from '../i18n.js';
 
 let mode = 'live';
 let editorCamera = null;
@@ -55,7 +56,7 @@ export async function setMode(next) {
     const panel = document.getElementById('editorPanel');
     if (panel) panel.style.display = isEditor ? 'flex' : 'none';
     const toggleBtn = document.getElementById('modeToggleBtn');
-    if (toggleBtn) toggleBtn.textContent = isEditor ? 'Switch to Live' : 'Switch to Editor';
+    if (toggleBtn) toggleBtn.textContent = isEditor ? t('topActions.switchToLive') : t('topActions.switchToEditor');
 
     // Editor mode disables auto-trigger firing and stops any running sequences so
     // the user can edit without their changes being overwritten. Live mode resumes
@@ -270,13 +271,13 @@ function buildHeader(panel) {
     const header = document.createElement('div');
     header.className = 'editor-header';
     header.innerHTML = `
-        <h3>3D EDITOR</h3>
+        <h3>${t('header.title')}</h3>
         <div class="editor-actions">
-            <button id="gizmoTranslate" class="gizmo-btn" title="Translate (W)">✥</button>
-            <button id="gizmoRotate" class="gizmo-btn" title="Rotate (E)">↻</button>
-            <button id="gizmoScale" class="gizmo-btn" title="Scale (R)">⤢</button>
-            <button id="gizmoDetach" class="gizmo-btn" title="Deselect (Esc)">×</button>
-            <button id="saveAllBtn" title="Save all (auto-saves on change)">Save</button>
+            <button id="gizmoTranslate" class="gizmo-btn" title="${t('header.translateTitle')}">✥</button>
+            <button id="gizmoRotate" class="gizmo-btn" title="${t('header.rotateTitle')}">↻</button>
+            <button id="gizmoScale" class="gizmo-btn" title="${t('header.scaleTitle')}">⤢</button>
+            <button id="gizmoDetach" class="gizmo-btn" title="${t('header.deselectTitle')}">×</button>
+            <button id="saveAllBtn" title="${t('header.saveTitle')}">${t('header.save')}</button>
         </div>
     `;
     panel.appendChild(header);
@@ -295,7 +296,19 @@ function wireTopActions() {
     const exportBtn = document.getElementById('exportBtn');
     const importBtn = document.getElementById('importBtn');
     const fileInput = document.getElementById('importFile');
+    const langBtn = document.getElementById('langToggleBtn');
     if (!exportBtn || !importBtn || !fileInput) return;
+
+    // Translate the static button text and tooltips into the current language.
+    exportBtn.textContent = t('topActions.export');
+    exportBtn.title = t('topActions.exportTitle');
+    importBtn.textContent = t('topActions.import');
+    importBtn.title = t('topActions.importTitle');
+    if (langBtn) {
+        // Button text always shows the *other* language so the affordance is clear.
+        langBtn.textContent = t('topActions.langToggle');
+        langBtn.onclick = () => toggleLanguage();
+    }
 
     exportBtn.onclick = () => exportSettings();
     importBtn.onclick = () => fileInput.click();
@@ -324,11 +337,11 @@ function buildTabs(panel) {
     const tabs = document.createElement('div');
     tabs.className = 'editor-tabs';
     tabs.innerHTML = `
-        <button class="tab-btn active" data-tab="lights">Lights</button>
-        <button class="tab-btn" data-tab="slots">Slots</button>
-        <button class="tab-btn" data-tab="cameras">Cameras</button>
-        <button class="tab-btn" data-tab="world">World</button>
-        <button class="tab-btn" data-tab="animations">Animations (BETA)</button>
+        <button class="tab-btn active" data-tab="lights">${t('tabs.lights')}</button>
+        <button class="tab-btn" data-tab="slots">${t('tabs.characters')}</button>
+        <button class="tab-btn" data-tab="cameras">${t('tabs.cameras')}</button>
+        <button class="tab-btn" data-tab="world">${t('tabs.world')}</button>
+        <button class="tab-btn" data-tab="animations">${t('tabs.animations')}</button>
     `;
     panel.appendChild(tabs);
 

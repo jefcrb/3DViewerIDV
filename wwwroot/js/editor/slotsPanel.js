@@ -1,6 +1,7 @@
 import { registry } from './registry.js';
 import { selectTarget } from './editorMode.js';
 import { applyRegistrySlotsToCharacterPositions } from '../scene/loader.js';
+import { t } from '../i18n.js';
 
 function slotRow(spec) {
     const row = document.createElement('div');
@@ -14,17 +15,17 @@ function slotRow(spec) {
             <button class="remove-btn">×</button>
         </div>
         <div class="row-body">
-            <label>Position
+            <label>${t('characters.position')}
                 <input type="number" step="0.1" value="${spec.position[0]}" class="pos-x">
                 <input type="number" step="0.1" value="${spec.position[1]}" class="pos-y">
                 <input type="number" step="0.1" value="${spec.position[2]}" class="pos-z">
             </label>
-            <label>Rotation
+            <label>${t('characters.rotation')}
                 <input type="number" step="0.01" value="${spec.rotation[0]}" class="rot-x">
                 <input type="number" step="0.01" value="${spec.rotation[1]}" class="rot-y">
                 <input type="number" step="0.01" value="${spec.rotation[2]}" class="rot-z">
             </label>
-            <label>Scale
+            <label>${t('characters.scale')}
                 <input type="number" step="0.05" value="${spec.scale[0]}" class="scl-x">
                 <input type="number" step="0.05" value="${spec.scale[1]}" class="scl-y">
                 <input type="number" step="0.05" value="${spec.scale[2]}" class="scl-z">
@@ -77,11 +78,11 @@ export function renderSlotsPanel() {
     const addBar = document.createElement('div');
     addBar.className = 'add-bar';
     if (available.length === 0) {
-        addBar.innerHTML = `<span style="color:#b3b3b3; flex:1; font-size:11px;">All slots are in use.</span>`;
+        addBar.innerHTML = `<span style="color:#b3b3b3; flex:1; font-size:11px;">${t('characters.allInUse')}</span>`;
     } else {
         addBar.innerHTML = `
             <select id="newSlotRole">${available.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
-            <button id="addSlotBtn">+ Add Slot</button>
+            <button id="addSlotBtn">${t('characters.addCharacter')}</button>
         `;
         addBar.querySelector('#addSlotBtn').onclick = () => {
             const role = addBar.querySelector('#newSlotRole').value;

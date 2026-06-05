@@ -1,7 +1,12 @@
 import { registry, intToHex } from './registry.js';
 import { selectTarget } from './editorMode.js';
+import { t } from '../i18n.js';
 
 const LIGHT_TYPES = ['Directional', 'Point', 'Spot', 'Hemisphere', 'Ambient'];
+
+// Localised label for a light type — value attribute stays English so saved data
+// keeps working regardless of UI language.
+function lightTypeLabel(type) { return t(`lights.types.${type}`); }
 
 function colorString(c) {
     if (typeof c === 'string') return c.startsWith('#') ? c : intToHex(parseInt(c));
@@ -24,33 +29,33 @@ function lightRow(spec) {
         <div class="row-head">
             <input class="name-input" type="text" value="${spec.name}">
             <select class="type-select">
-                ${LIGHT_TYPES.map(t => `<option value="${t}" ${t === spec.type ? 'selected' : ''}>${t}</option>`).join('')}
+                ${LIGHT_TYPES.map(name => `<option value="${name}" ${name === spec.type ? 'selected' : ''}>${lightTypeLabel(name)}</option>`).join('')}
             </select>
             <button class="select-btn">⊕</button>
             <button class="remove-btn">×</button>
         </div>
         <div class="row-body">
-            <label>Color <input type="color" class="color-input" value="${colorString(spec.color)}"></label>
-            ${showGround ? `<label>Ground <input type="color" class="ground-input" value="${colorString(spec.groundColor)}"></label>` : ''}
-            <label>Intensity <input type="number" min="0" step="1" value="${spec.intensity}" class="intensity-input"></label>
+            <label>${t('lights.color')} <input type="color" class="color-input" value="${colorString(spec.color)}"></label>
+            ${showGround ? `<label>${t('lights.ground')} <input type="color" class="ground-input" value="${colorString(spec.groundColor)}"></label>` : ''}
+            <label>${t('lights.intensity')} <input type="number" min="0" step="1" value="${spec.intensity}" class="intensity-input"></label>
             ${showPosition ? `
-            <label>Pos
+            <label>${t('lights.pos')}
                 <input type="number" step="0.1" value="${spec.position[0]}" class="pos-x">
                 <input type="number" step="0.1" value="${spec.position[1]}" class="pos-y">
                 <input type="number" step="0.1" value="${spec.position[2]}" class="pos-z">
             </label>` : ''}
             ${showTarget ? `
-            <label>Target
+            <label>${t('lights.target')}
                 <input type="number" step="0.1" value="${spec.target[0]}" class="tgt-x">
                 <input type="number" step="0.1" value="${spec.target[1]}" class="tgt-y">
                 <input type="number" step="0.1" value="${spec.target[2]}" class="tgt-z">
             </label>` : ''}
             ${showSpotExtras ? `
-            <label class="slider-row">Angle <input type="range" min="0" max="${Math.PI / 2}" step="0.01" value="${spec.extras?.angle ?? Math.PI / 6}" class="angle-input"></label>
-            <label class="slider-row">Penumbra <input type="range" min="0" max="1" step="0.01" value="${spec.extras?.penumbra ?? 0.1}" class="penumbra-input"></label>` : ''}
+            <label class="slider-row">${t('lights.angle')} <input type="range" min="0" max="${Math.PI / 2}" step="0.01" value="${spec.extras?.angle ?? Math.PI / 6}" class="angle-input"></label>
+            <label class="slider-row">${t('lights.penumbra')} <input type="range" min="0" max="1" step="0.01" value="${spec.extras?.penumbra ?? 0.1}" class="penumbra-input"></label>` : ''}
             ${showPointExtras ? `
-            <label class="slider-row">Distance <input type="number" step="0.5" value="${spec.extras?.distance ?? 0}" class="distance-input"></label>` : ''}
-            <label><input type="checkbox" class="shadow-input" ${spec.castShadow ? 'checked' : ''}> Cast shadows</label>
+            <label class="slider-row">${t('lights.distance')} <input type="number" step="0.5" value="${spec.extras?.distance ?? 0}" class="distance-input"></label>` : ''}
+            <label><input type="checkbox" class="shadow-input" ${spec.castShadow ? 'checked' : ''}> ${t('lights.castShadows')}</label>
         </div>
     `;
 
@@ -118,8 +123,8 @@ export function renderLightsPanel() {
     const addBar = document.createElement('div');
     addBar.className = 'add-bar';
     addBar.innerHTML = `
-        <select id="newLightType">${LIGHT_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
-        <button id="addLightBtn">+ Add Light</button>
+        <select id="newLightType">${LIGHT_TYPES.map(name => `<option value="${name}">${lightTypeLabel(name)}</option>`).join('')}</select>
+        <button id="addLightBtn">${t('lights.addLight')}</button>
     `;
     pane.appendChild(addBar);
     addBar.querySelector('#addLightBtn').onclick = () => {

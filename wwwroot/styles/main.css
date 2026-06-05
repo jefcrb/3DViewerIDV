@@ -310,7 +310,8 @@ html, body {
 }
 #modeToggleBtn,
 #topActions #exportBtn,
-#topActions #importBtn {
+#topActions #importBtn,
+#topActions #langToggleBtn {
     padding: 8px 14px;
     border: none;
     border-radius: 6px;
@@ -325,9 +326,11 @@ html, body {
 #modeToggleBtn { background: #7b61ff; }
 #modeToggleBtn:hover { background: #6750d4; }
 #topActions #exportBtn,
-#topActions #importBtn { background: #3c3c3c; }
+#topActions #importBtn,
+#topActions #langToggleBtn { background: #3c3c3c; }
 #topActions #exportBtn:hover,
-#topActions #importBtn:hover { background: #4a4a4a; }
+#topActions #importBtn:hover,
+#topActions #langToggleBtn:hover { background: #4a4a4a; }
 
 #editorPanel {
     position: absolute;

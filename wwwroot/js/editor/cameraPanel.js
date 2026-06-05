@@ -1,5 +1,6 @@
 import { registry } from './registry.js';
 import { selectTarget } from './editorMode.js';
+import { t } from '../i18n.js';
 
 let editorCameraRef = null;
 
@@ -20,26 +21,26 @@ export function renderCameraPanel() {
     pane.innerHTML = `
         <div class="editor-row">
             <div class="row-head">
-                <strong>Live (Broadcast) Camera</strong>
-                <button id="liveCamSelect" class="select-btn" title="Attach gizmo">⊕</button>
+                <strong>${t('cameras.live')}</strong>
+                <button id="liveCamSelect" class="select-btn" title="${t('cameras.attachGizmo')}">⊕</button>
             </div>
             <div class="row-body">
-                <label>Position
+                <label>${t('cameras.position')}
                     <input type="number" step="0.1" value="${spec.position[0]}" id="liveCamX">
                     <input type="number" step="0.1" value="${spec.position[1]}" id="liveCamY">
                     <input type="number" step="0.1" value="${spec.position[2]}" id="liveCamZ">
                 </label>
-                <label>Rotation (deg)
+                <label>${t('cameras.rotationDeg')}
                     <input type="number" step="1" value="${asDeg(spec.rotation[0])}" id="liveCamRX">
                     <input type="number" step="1" value="${asDeg(spec.rotation[1])}" id="liveCamRY">
                     <input type="number" step="1" value="${asDeg(spec.rotation[2])}" id="liveCamRZ">
                 </label>
-                <label class="slider-row">FOV
+                <label class="slider-row">${t('cameras.fov')}
                     <input type="range" min="10" max="120" step="1" value="${spec.fov}" id="liveCamFov">
                     <span id="liveCamFovValue">${spec.fov}°</span>
                 </label>
                 <div class="button-row">
-                    <button id="liveCamSnap">Snap to editor</button>
+                    <button id="liveCamSnap">${t('cameras.snap')}</button>
                 </div>
             </div>
         </div>

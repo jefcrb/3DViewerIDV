@@ -3,6 +3,7 @@ import { listKnownEvents, playSequence, stopSequence } from '../animation/trigge
 import { registry, intToHex } from './registry.js';
 import { selectTarget } from './editorMode.js';
 import { showPath, hidePath } from './pathPreview.js';
+import { t } from '../i18n.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -252,12 +253,13 @@ function diffSummary(seq, kf, prevKf) {
     const cur = kf.snapshot;
     const prev = prevKf?.snapshot;
     const parts = [];
+    const start = t('animations.startPrefix');
 
     if (target === 'liveCamera') {
         const c = cur.liveCamera;
         if (!c) return '';
         const p = prev?.liveCamera;
-        if (!p) return `start · pos ${fmtVec(c.position)} · fov ${Math.round(c.fov)}`;
+        if (!p) return `${start} · pos ${fmtVec(c.position)} · fov ${Math.round(c.fov)}`;
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
         if (Math.abs(c.fov - p.fov) > 0.5) parts.push(`fov ${Math.round(c.fov)}`);
@@ -266,7 +268,7 @@ function diffSummary(seq, kf, prevKf) {
         const c = cur.lights?.[id];
         if (!c) return '';
         const p = prev?.lights?.[id];
-        if (!p) return `start · int ${c.intensity.toFixed(2)} · col ${c.color}`;
+        if (!p) return `${start} · int ${c.intensity.toFixed(2)} · col ${c.color}`;
         if (Math.abs((c.intensity ?? 0) - (p.intensity ?? 0)) > DIFF_EPS) parts.push(`int ${c.intensity.toFixed(2)}`);
         if (c.color !== p.color) parts.push(`col ${c.color}`);
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
@@ -276,13 +278,13 @@ function diffSummary(seq, kf, prevKf) {
         const c = cur.slots?.[id];
         if (!c) return '';
         const p = prev?.slots?.[id];
-        if (!p) return `start · pos ${fmtVec(c.position)}`;
+        if (!p) return `${start} · pos ${fmtVec(c.position)}`;
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
         if (arraysDiffer(c.scale, p.scale, 0.005)) parts.push(`scl ${fmtVec(c.scale, 2)}`);
     }
 
-    return parts.length ? parts.join(' · ') : 'no change';
+    return parts.length ? parts.join(' · ') : t('animations.noChange');
 }
 
 // ===== Detail sections (only rendered if target is in seq.targets) =====
@@ -292,18 +294,18 @@ function liveCameraSection(kf) {
     if (!c) return '';
     return `
         <div class="kf-section">
-            <div class="kf-section-title">Live Camera</div>
-            <label>Position
+            <div class="kf-section-title">${t('cameras.live')}</div>
+            <label>${t('cameras.position')}
                 <input type="number" step="0.1" value="${c.position[0]}" data-path="liveCamera.position.0">
                 <input type="number" step="0.1" value="${c.position[1]}" data-path="liveCamera.position.1">
                 <input type="number" step="0.1" value="${c.position[2]}" data-path="liveCamera.position.2">
             </label>
-            <label>Rotation°
+            <label>${t('cameras.rotationDeg')}
                 <input type="number" step="1" value="${(c.rotation[0] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.0" data-deg>
                 <input type="number" step="1" value="${(c.rotation[1] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.1" data-deg>
                 <input type="number" step="1" value="${(c.rotation[2] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.2" data-deg>
             </label>
-            <label>FOV
+            <label>${t('cameras.fov')}
                 <input type="number" step="1" min="10" max="120" value="${c.fov}" data-path="liveCamera.fov">
             </label>
         </div>
@@ -321,28 +323,28 @@ function lightSection(kf, lightId) {
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_LIGHT} ${label} <span class="muted">(${lightId})</span></div>
-            <label>Intensity
+            <label>${t('lights.intensity')}
                 <input type="number" step="1" min="0" value="${l.intensity}" data-path="lights.${lightId}.intensity">
             </label>
-            <label>Color
+            <label>${t('lights.color')}
                 <input type="color" value="${colorToHex(l.color)}" data-path="lights.${lightId}.color">
             </label>
             ${showPos ? `
-            <label>Position
+            <label>${t('cameras.position')}
                 <input type="number" step="0.1" value="${l.position[0]}" data-path="lights.${lightId}.position.0">
                 <input type="number" step="0.1" value="${l.position[1]}" data-path="lights.${lightId}.position.1">
                 <input type="number" step="0.1" value="${l.position[2]}" data-path="lights.${lightId}.position.2">
             </label>
-            <label>Target
+            <label>${t('lights.target')}
                 <input type="number" step="0.1" value="${l.target[0]}" data-path="lights.${lightId}.target.0">
                 <input type="number" step="0.1" value="${l.target[1]}" data-path="lights.${lightId}.target.1">
                 <input type="number" step="0.1" value="${l.target[2]}" data-path="lights.${lightId}.target.2">
             </label>` : ''}
             ${isSpot ? `
-            <label>Angle°
+            <label>${t('lights.angle')}°
                 <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
             </label>
-            <label>Penumbra
+            <label>${t('lights.penumbra')}
                 <input type="number" step="0.05" min="0" max="1" value="${l.extras?.penumbra ?? 0}" data-path="lights.${lightId}.extras.penumbra">
             </label>` : ''}
         </div>
@@ -357,17 +359,17 @@ function slotSection(kf, slotId) {
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_SLOT} ${label} <span class="muted">(${slotId})</span></div>
-            <label>Position
+            <label>${t('characters.position')}
                 <input type="number" step="0.1" value="${s.position[0]}" data-path="slots.${slotId}.position.0">
                 <input type="number" step="0.1" value="${s.position[1]}" data-path="slots.${slotId}.position.1">
                 <input type="number" step="0.1" value="${s.position[2]}" data-path="slots.${slotId}.position.2">
             </label>
-            <label>Rotation°
+            <label>${t('characters.rotation')}°
                 <input type="number" step="1" value="${(s.rotation[0] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.0" data-deg>
                 <input type="number" step="1" value="${(s.rotation[1] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.1" data-deg>
                 <input type="number" step="1" value="${(s.rotation[2] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.2" data-deg>
             </label>
-            <label>Scale
+            <label>${t('characters.scale')}
                 <input type="number" step="0.05" value="${s.scale[0]}" data-path="slots.${slotId}.scale.0">
                 <input type="number" step="0.05" value="${s.scale[1]}" data-path="slots.${slotId}.scale.1">
                 <input type="number" step="0.05" value="${s.scale[2]}" data-path="slots.${slotId}.scale.2">
@@ -428,10 +430,10 @@ function keyframeRow(seq, kf, prevKf) {
 
     row.innerHTML = `
         <div class="kf-head">
-            <input type="number" step="0.05" min="0" value="${kf.t.toFixed(2)}" class="kf-time" title="Keyframe time">
+            <input type="number" step="0.05" min="0" value="${kf.t.toFixed(2)}" class="kf-time" title="${t('animations.keyframeTime')}">
             <span class="kf-head-spacer"></span>
-            <button class="kf-duplicate" title="Duplicate this keyframe at the end of the sequence (+1s)">⧉</button>
-            <button class="kf-delete" title="Delete this keyframe">×</button>
+            <button class="kf-duplicate" title="${t('animations.duplicateKf')}">⧉</button>
+            <button class="kf-delete" title="${t('animations.deleteKf')}">×</button>
         </div>
         ${isOpen
             ? `<div class="kf-detail"></div>`
@@ -497,7 +499,7 @@ function keyframeRow(seq, kf, prevKf) {
         // appended later.
         const currentEasing = kf.easing || 'cubicInOut';
         const easingRow = `
-            <label class="kf-easing-row" title="Curve used from this keyframe to the next">Easing (to next)
+            <label class="kf-easing-row" title="${t('animations.easingTooltip')}">${t('animations.easingToNext')}
                 <select class="kf-easing-select">
                     ${EASING_NAMES.map(e => `<option value="${e}" ${e === currentEasing ? 'selected' : ''}>${e}</option>`).join('')}
                 </select>
@@ -526,24 +528,24 @@ function targetSection(seq) {
     const target = seq.targets[0];
     const hasKeyframes = seq.keyframes.length > 0;
     const resetTitle = hasKeyframes
-        ? 'Jump back to the value in this sequence’s first keyframe'
-        : 'No keyframes yet — record one to define a home pose';
+        ? t('animations.resetTitle')
+        : t('animations.noKeyframesYet');
 
     // Target is locked once the sequence is created — to change it, delete this
     // sequence and add a new one (saves a lot of "what does it mean to swap" UX).
     if (!target) {
         return `
-            <label>Animating:</label>
+            <label>${t('animations.animating')}</label>
             <div class="target-list">
-                <span class="muted">No target — recreate the sequence to pick one.</span>
+                <span class="muted">${t('animations.noTarget')}</span>
             </div>
         `;
     }
 
     return `
-        <label>Animating:</label>
+        <label>${t('animations.animating')}</label>
         <div class="target-list">
-            <span class="target-chip" data-target="${target}" title="Click to attach gizmo">
+            <span class="target-chip" data-target="${target}" title="${t('animations.attachGizmo')}">
                 <span class="target-chip-label">${targetLabel(target)}</span>
                 <button class="target-reset" data-target="${target}" title="${resetTitle}" ${hasKeyframes ? '' : 'disabled'}>↺</button>
             </span>
@@ -569,8 +571,8 @@ function sequenceRow(spec) {
     const targetSummary = spec.targets[0] ? targetLabel(spec.targets[0]) : 'no target';
 
     const pillsHtml = (list) => list.length === 0
-        ? '<span class="muted">none</span>'
-        : list.map(t => `<span class="trigger-mini">${t}</span>`).join('');
+        ? `<span class="muted">${t('animations.none')}</span>`
+        : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
 
     // Pill grid HTML — separate `kind` so the wire-up below can route each
     // checkbox to spec.triggers vs spec.stopTriggers via data-kind.
@@ -585,9 +587,9 @@ function sequenceRow(spec) {
         <div class="row-head">
             <input class="name-input" type="text" value="${spec.name}">
             <span class="seq-duration muted">${duration.toFixed(2)}s</span>
-            <button class="play-btn" title="${playing ? 'Stop' : 'Play'}">${playing ? '■' : '▶'}</button>
-            <button class="duplicate-btn" title="Duplicate this sequence">⧉</button>
-            <button class="remove-btn" title="Delete this sequence">×</button>
+            <button class="play-btn" title="${playing ? t('animations.stopTitle') : t('animations.playTitle')}">${playing ? '■' : '▶'}</button>
+            <button class="duplicate-btn" title="${t('animations.duplicateSeq')}">⧉</button>
+            <button class="remove-btn" title="${t('animations.deleteSeq')}">×</button>
         </div>
         ${isExpanded ? `
         <div class="row-body">
@@ -595,39 +597,39 @@ function sequenceRow(spec) {
 
             <label class="loop-row">
                 <input type="checkbox" class="loop-toggle" ${isLoop ? 'checked' : ''}>
-                Loop
+                ${t('animations.loop')}
             </label>
 
-            <label>${isLoop ? 'Start triggers:' : 'Triggers:'}</label>
+            <label>${isLoop ? t('animations.startTriggers') : t('animations.triggers')}</label>
             <div class="trigger-list" data-kind="triggers">
                 ${triggerPills('triggers', triggers)}
             </div>
 
             ${isLoop ? `
-            <label>Stop triggers:</label>
+            <label>${t('animations.stopTriggers')}</label>
             <div class="trigger-list" data-kind="stopTriggers">
                 ${triggerPills('stopTriggers', stopTriggers)}
             </div>` : ''}
 
-            <label>Keyframes (${spec.keyframes.length}):</label>
+            <label>${t('animations.keyframes')} (${spec.keyframes.length}):</label>
             <div class="keyframe-list"></div>
             <div class="kf-record-row">
                 <input type="number" step="0.05" min="0" value="${defaultNewT}" class="kf-new-time" placeholder="time">
-                <button class="kf-record-btn" title="Snapshot the current scene at this time">● Record at time</button>
+                <button class="kf-record-btn" title="${t('animations.recordAtTimeTitle')}">${t('animations.recordAtTime')}</button>
             </div>
         </div>`
         : `
         <div class="seq-summary">
             <div class="seq-target-line">
-                ${targetSummary}${isLoop ? ' <span class="seq-loop-tag">loop</span>' : ''}
+                ${targetSummary}${isLoop ? ` <span class="seq-loop-tag">${t('animations.loopTag')}</span>` : ''}
             </div>
             <div class="seq-trigger-line">
-                <span class="seq-trigger-label">${isLoop ? 'start' : 'on'}:</span>
+                <span class="seq-trigger-label">${(isLoop ? t('animations.start') : t('animations.on'))}:</span>
                 ${pillsHtml(triggers)}
             </div>
             ${isLoop ? `
             <div class="seq-trigger-line">
-                <span class="seq-trigger-label">stop:</span>
+                <span class="seq-trigger-label">${t('animations.stop')}:</span>
                 ${pillsHtml(stopTriggers)}
             </div>` : ''}
         </div>`}
@@ -737,10 +739,7 @@ export function renderAnimationsPanel() {
 
     const help = document.createElement('div');
     help.className = 'editor-note';
-    help.innerHTML = `
-        <p><strong>Experimental:</strong> this feature is still in development and
-        may misbehave or change between updates.</p>
-    `;
+    help.innerHTML = `<p>${t('animations.experimental')}</p>`;
     pane.appendChild(help);
 
     const list = document.createElement('div');
@@ -753,10 +752,10 @@ export function renderAnimationsPanel() {
     addBar.className = 'add-bar';
     addBar.innerHTML = `
         <select id="newSeqTarget" ${allTargets.length === 0 ? 'disabled' : ''}>
-            ${allTargets.map(t => `<option value="${t}">${targetLabel(t)}</option>`).join('')}
+            ${allTargets.map(target => `<option value="${target}">${targetLabel(target)}</option>`).join('')}
         </select>
-        <button id="addSeqBtn" ${allTargets.length === 0 ? 'disabled' : ''}>+ New Sequence</button>
-        <button id="stopAllBtn">■ Stop All</button>
+        <button id="addSeqBtn" ${allTargets.length === 0 ? 'disabled' : ''}>${t('animations.newSequence')}</button>
+        <button id="stopAllBtn">${t('animations.stopAll')}</button>
     `;
     pane.appendChild(addBar);
     addBar.querySelector('#addSeqBtn').onclick = () => {
