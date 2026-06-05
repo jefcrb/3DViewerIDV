@@ -23,5 +23,317 @@
     "x": 5,
     "y": 8,
     "z": 5
+  },
+  "editor": {
+    "lights": [
+      {
+        "id": "light_a08b3b62",
+        "name": "Directional Light",
+        "type": "Directional",
+        "color": "#ffffff",
+        "groundColor": "#444444",
+        "intensity": 1,
+        "position": [
+          -12.285220782941106,
+          19.925426498111996,
+          20.398204398204484
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "castShadow": true,
+        "extras": {}
+      }
+    ],
+    "slots": [
+      {
+        "id": "hunter",
+        "role": "hunter",
+        "label": "hunter",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          -3.141592653589793,
+          0,
+          -3.141592653589793
+        ],
+        "scale": [
+          4.5,
+          4.5,
+          4.5
+        ]
+      },
+      {
+        "id": "survivor_1",
+        "role": "survivor_1",
+        "label": "survivor_1",
+        "position": [
+          -18.133707038483976,
+          0,
+          20
+        ],
+        "rotation": [
+          -3.141592653589793,
+          0,
+          -3.141592653589793
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      {
+        "id": "survivor_2",
+        "role": "survivor_2",
+        "label": "survivor_2",
+        "position": [
+          -10.021750367238756,
+          0,
+          20
+        ],
+        "rotation": [
+          -3.141592653589793,
+          0,
+          -3.141592653589793
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      {
+        "id": "survivor_3",
+        "role": "survivor_3",
+        "label": "survivor_3",
+        "position": [
+          9.859632317001974,
+          0,
+          20
+        ],
+        "rotation": [
+          -3.141592653589793,
+          0,
+          -3.141592653589793
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      {
+        "id": "survivor_4",
+        "role": "survivor_4",
+        "label": "survivor_4",
+        "position": [
+          17.512335469853504,
+          0,
+          20
+        ],
+        "rotation": [
+          -3.141592653589793,
+          0,
+          -3.141592653589793
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      }
+    ],
+    "liveCamera": {
+      "position": [
+        0,
+        6.359582641785355,
+        51.57474067843777
+      ],
+      "rotation": [
+        -0.06283185307179587,
+        -0.005235987755982988,
+        0
+      ],
+      "fov": 50
+    },
+    "world": {
+      "backgroundColor": "#b7529e",
+      "shadowsEnabled": true,
+      "shadowMapType": "PCFSoft",
+      "shadowMapSize": 1024,
+      "shadowBias": -0.0002,
+      "shadowNormalBias": 0.245,
+      "shadowRadius": 12,
+      "directionalShadowBounds": 60,
+      "directionalShadowFar": 200,
+      "toneMapping": "ACESFilmic",
+      "toneMappingExposure": 0.56
+    },
+    "sequences": [
+      {
+        "id": "seq_2371a2d1",
+        "name": "sequence_1",
+        "loop": false,
+        "triggers": [
+          "hunter_selected"
+        ],
+        "stopTriggers": [],
+        "targets": [
+          "liveCamera"
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "snapshot": {
+              "lights": {},
+              "slots": {},
+              "liveCamera": {
+                "position": [
+                  0.11715714285838608,
+                  6.359582641785355,
+                  51.57474067843777
+                ],
+                "rotation": [
+                  -0.06283185307179587,
+                  -0.005235987755982988,
+                  0
+                ],
+                "fov": 50
+              }
+            },
+            "easing": "cubicInOut"
+          },
+          {
+            "t": 1,
+            "snapshot": {
+              "lights": {},
+              "slots": {},
+              "liveCamera": {
+                "position": [
+                  6.208880355764644,
+                  10.842475766656541,
+                  11.595104368848524
+                ],
+                "rotation": [
+                  -0.38120638146116514,
+                  0.4612551208781591,
+                  0.10550870929670524
+                ],
+                "fov": 50
+              }
+            },
+            "easing": "cubicInOut"
+          },
+          {
+            "t": 2,
+            "snapshot": {
+              "lights": {},
+              "slots": {},
+              "liveCamera": {
+                "position": [
+                  0.11715714285838608,
+                  6.359582641785355,
+                  51.57474067843777
+                ],
+                "rotation": [
+                  -0.06283185307179587,
+                  -0.005235987755982988,
+                  0
+                ],
+                "fov": 50
+              }
+            },
+            "easing": "cubicInOut"
+          }
+        ]
+      },
+      {
+        "id": "seq_410c4daf",
+        "name": "sequence_4",
+        "loop": true,
+        "triggers": [
+          "survivor_1_selected",
+          "survivor_3_selected"
+        ],
+        "stopTriggers": [
+          "survivor_2_selected",
+          "survivor_4_selected"
+        ],
+        "targets": [
+          "liveCamera"
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "snapshot": {
+              "lights": {},
+              "slots": {},
+              "liveCamera": {
+                "position": [
+                  -14.525276460950778,
+                  6.359582641785355,
+                  51.57474067843777
+                ],
+                "rotation": [
+                  -0.06283185307179587,
+                  -0.005235987755982988,
+                  0
+                ],
+                "fov": 50
+              }
+            },
+            "easing": "cubicInOut"
+          },
+          {
+            "t": 3,
+            "snapshot": {
+              "lights": {},
+              "slots": {},
+              "liveCamera": {
+                "position": [
+                  16.78392581315111,
+                  6.359582641785355,
+                  51.57474067843777
+                ],
+                "rotation": [
+                  -0.06283185307179587,
+                  -0.005235987755982988,
+                  0
+                ],
+                "fov": 50
+              }
+            },
+            "easing": "cubicInOut"
+          },
+          {
+            "t": 6,
+            "snapshot": {
+              "lights": {},
+              "slots": {},
+              "liveCamera": {
+                "position": [
+                  -14.525276460950778,
+                  6.359582641785355,
+                  51.57474067843777
+                ],
+                "rotation": [
+                  -0.06283185307179587,
+                  -0.005235987755982988,
+                  0
+                ],
+                "fov": 50
+              }
+            },
+            "easing": "cubicInOut"
+          }
+        ]
+      }
+    ]
   }
 }
