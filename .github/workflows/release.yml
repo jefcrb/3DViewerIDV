@@ -19,7 +19,7 @@ jobs:
       - name: Create ZIP archive
         run: |
           zip -r 3DViewerIDV-${{ github.ref_name }}.zip . \
-          -x ".git/*" ".github/*"
+          -x ".git/*" ".github/*" "assets/*"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
