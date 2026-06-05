@@ -1,75 +1,42 @@
-# IDV 3D graphics customization
+# IDV 3D 图形自定义
 
 非专业翻译，仅供参考，请以英文原版为准。（译注）
-[英文原版English](README.md)
+[英文原版 English](README.md)
 
-本项目是[neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf)的插件，用于支持3D图形。场景可以使用Blender编辑。请查看下面的说明。
+本项目是 [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf) 的插件，提供 3D 图形支持。
 
-**!! 本项目仅在作者电脑上测试，bug较多，欢迎提供反馈 (discord: dostojefsky)**
+**!! 本项目仍处于早期阶段，仅在作者电脑上测试过，bug 较多，欢迎反馈（discord: dostojefsky）**
+
 ![效果展示](assets/showcase.gif)
 
 ## 安装
 
-1. 安装 [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf/releases/tag/v2.1.0-beta%2B1e61260)
-2. 克隆本仓库：
+1. 安装 [neo-bpsys-wpf](https://github.com/PLFJY/neo-bpsys-wpf/releases/tag/v2.1.0-beta%2B1e61260)，并通过插件商店安装本插件；或：
+2. 克隆本仓库（或下载 zip 并解压）：
    ```
    git clone git@github.com:jefcrb/3DViewerIDV.git
    ```
-3. 将项目文件夹移至 `%APPDATA%\neo-bpsys-wpf\Plugins`:
+3. 将项目文件夹移至 `%APPDATA%\neo-bpsys-wpf\Plugins`：
    ```
    mv 3DViewerIDV %APPDATA%\neo-bpsys-wpf\Plugins
    ```
 
+   
+
 ## 快速开始
+![设置页面](assets/settingspage.png)
 
-1. 从 https://www.blender.org/download/ 下载 Blender 3.0 以上版本
-2. 在 Blender 中打开 `template.blend` （文件>打开）
-3. 根据需要调整场景、光照和相机
-4. 导出为 GLB 文件 (文件 > 导出 > glTF 2.0)
-5. 将 `scene.glb` 复制到 `wwwroot/assets/`
+1. 上传你自己的 .glb 场景，或使用内置场景；可使用 Blender 或 [threejs editor](https://threejs.org/editor/) 等 3D 软件进行编辑
+2. 下载角色模型
+3. 启动开发服务器，在浏览器中打开 http://localhost:9090?dev=true
+4. 自由编辑组件、添加角色、创建动画
+5. 预览你的作品
+6. 在 OBS 中将 OBS URL 配置为浏览器源
 
-## 模板
 
-文件 `template.blend` 包含：
+## 功能
 
-- **5个假人模型**
-  - `_HUNTER` - 中间靠后
-  - `_SURVIVOR_1` - 左前
-  - `_SURVIVOR_2` - 左前靠中间
-  - `_SURVIVOR_3` - 右前靠中间
-  - `_SURVIVOR_4` - 右前
-
-## 导出场景
-
-### 导出步骤
-
-1. **文件 > 导出 > glTF 2.0 (.glb)**
-2. **文件名**: `scene.glb`
-3. **关键设置** （右侧面板）:
-
-#### 请检查以下几点：
-- **格式**: glTF Binary (.glb)
-- **包括 > 摄像机**
-- **包括 > 精确灯光**
-- **变换 > +Y 向上**
-- **数据 > 网络 > 应用修改器**
-- **数据 > 网络 > UV**
-- **数据 > 网络 > 法向**
-- **材质**: 导出
-译者使用 Blender 5.0.1，部分选项与原文不同，如有问题请参考原文（译注）
-
-#### 可选:
-- **压缩**: 可减小文件大小
-- **记住导出设置**: 为下次使用保存设置
-4. **点击 "导出 glTF 2.0"**
-
-### 复制到项目
-将导出的文件复制到以下路径并重命名为`scene.glb`：
-```
-%APPDATA%\neo-bpsys-wpf\Plugins\3DViewerIDV\wwwroot\assets
-```
-
-## 设置
-安装插件后，可以在软件中找到 3DViewerIDV 设置页面。在此可以为 OBS 启动 Web 浏览器源服务。
-![settingspage](assets/settingspage.png)
-访问 `http://localhost:{port}?dev=true` 开发页面以查找其他设置
+在开发面板中自定义灯光、相机位置、渲染设置等。
+基于各种触发器创建关键帧动画，控制灯光或相机的移动。
+![监管者被选中时相机移动](assets/showcase2.gif)
+![灯光持续循环](assets/showcase3.gif)
