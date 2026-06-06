@@ -11,6 +11,7 @@ import { sequencer } from '../animation/sequencer.js';
 import { setFiringAllowed } from '../animation/triggers.js';
 import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
 import { t, toggleLanguage } from '../i18n.js';
+import { togglePerfMonitor } from '../perf/statsMonitor.js';
 
 let mode = 'live';
 let editorCamera = null;
@@ -286,6 +287,7 @@ function wireTopActions() {
     const importBtn = document.getElementById('importBtn');
     const fileInput = document.getElementById('importFile');
     const langBtn = document.getElementById('langToggleBtn');
+    const perfBtn = document.getElementById('perfToggleBtn');
     if (!exportBtn || !importBtn || !fileInput) return;
 
     exportBtn.textContent = t('topActions.export');
@@ -295,6 +297,10 @@ function wireTopActions() {
     if (langBtn) {
         langBtn.textContent = t('topActions.langToggle');
         langBtn.onclick = () => toggleLanguage();
+    }
+    if (perfBtn) {
+        perfBtn.title = t('topActions.perfToggleTitle');
+        perfBtn.onclick = () => togglePerfMonitor();
     }
 
     exportBtn.onclick = () => exportSettings();

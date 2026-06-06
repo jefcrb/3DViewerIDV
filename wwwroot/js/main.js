@@ -21,6 +21,7 @@ import { setupCharacterAPI, fireSceneLoaded } from './characters/api.js';
 import { loadSettings } from './storage/settingsStorage.js';
 import { registry } from './editor/registry.js';
 import { sequencer } from './animation/sequencer.js';
+import { initPerfMonitor, updatePerfMonitor } from './perf/statsMonitor.js';
 
 const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
@@ -65,19 +66,22 @@ function animate(currentTime) {
     }
 
     renderer.render(scene, getCurrentCamera());
+
+    updatePerfMonitor();
 }
 
 (async function() {
     try {
         const settings = await loadSettings();
-        // rendererType is ignored: WebGPU is broken on many configs; force webgl.
+        initPerfMonitor();
+        // rendererType is ignored; force webgl
         renderer = await setupRenderer(canvas, 'webgl');
         scene = setupScene(renderer);
         liveCamera = setupLiveCamera();
         editorCamera = setupEditorCamera();
         editorControls = setupEditorControls(editorCamera, canvas);
         cameraHelper = createLiveCameraHelper(liveCamera);
-        // TransformControls needs its target in the scene graph.
+        // TransformControls needs its target in the scene graph
         scene.add(liveCamera);
         scene.add(cameraHelper);
 

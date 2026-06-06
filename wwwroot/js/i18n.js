@@ -13,6 +13,7 @@ const translations = {
         'topActions.import': 'Import',
         'topActions.importTitle': 'Replace settings from a JSON file',
         'topActions.langToggle': '中文',
+        'topActions.perfToggleTitle': 'Toggle performance monitor (P)',
 
         // === editor header ===
         'header.title': '3D EDITOR',
@@ -128,6 +129,7 @@ const translations = {
         'topActions.import': '导入',
         'topActions.importTitle': '从 JSON 文件替换设置',
         'topActions.langToggle': 'EN',
+        'topActions.perfToggleTitle': '切换性能监视器 (P)',
 
         // === editor header ===
         'header.title': '3D 编辑器',
