@@ -102,7 +102,6 @@ export async function preloadAllModels() {
 
             const characterList = await response.json();
 
-            // Load each model
             for (const characterName of characterList) {
                 const url = `./${dir}/${characterName}/${characterName}.gltf`;
 
@@ -111,7 +110,6 @@ export async function preloadAllModels() {
                         loader.load(url, resolve, undefined, reject);
                     });
 
-                    // Cache the entire GLTF object
                     modelCache.set(url, gltf);
                     totalLoaded++;
                     console.log(`Cached: ${characterName} (${totalLoaded} loaded)`);
@@ -130,7 +128,6 @@ export async function preloadAllModels() {
     preloadComplete = true;
 }
 
-// Process and add model to scene (shared logic for cached and loaded models)
 function processAndAddModel(gltf, scene, url, name, transform, type, index, options) {
     const model = SkeletonUtils.clone(gltf.scene);
 
@@ -178,7 +175,6 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
         model.position.copy(transform.position);
         model.rotation.copy(transform.rotation);
 
-        // Apply Y-offset
         const folderName = url.split('/').filter(Boolean).slice(-2, -1)[0];
         if (state.customScales) {
             const customData = state.customScales[folderName] || state.customScales[name];
@@ -203,7 +199,6 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
             }
 
             requestAnimationFrame(() => {
-                // Properly dispose and unload before loading new model
                 if (type === 'survivor' && index >= 0 && index < 4) {
                     if (state.loadedCharacters.survivors[index]) {
                         disposeModel(state.loadedCharacters.survivors[index]);
@@ -218,7 +213,6 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
 
                 scene.add(model);
 
-                // Play intro animation
                 playIntroAnimation(model);
 
                 const characterData = {
@@ -239,7 +233,6 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
 }
 
 export function loadCharacterModel(scene, url, name, transform, type, index, options = {}) {
-    // Check cache first
     if (modelCache.has(url)) {
         console.log(`Loading ${type}: ${name} from cache (instant)`);
         const cachedGltf = modelCache.get(url);
@@ -247,7 +240,6 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
         return;
     }
 
-    // Cache miss - load from disk
     console.log(`Loading ${type}: ${name} from ${url}`);
 
     const loader = new GLTFLoader();
@@ -256,7 +248,6 @@ export function loadCharacterModel(scene, url, name, transform, type, index, opt
         (gltf) => {
             console.log(`Successfully loaded ${type}: ${name}`);
 
-            // Cache for future use
             if (!modelCache.has(url)) {
                 modelCache.set(url, gltf);
                 console.log(`Cached model: ${name}`);

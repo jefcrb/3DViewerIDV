@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 
-// Single source of truth for editable scene objects: lights, character slots, live camera.
-// UI panels mutate via add/remove/update; Theatre.js bindings subscribe to change events.
+// Single source of truth for editable scene objects. Mutations emit change events.
 
 const DEFAULT_SLOT_IDS = ['hunter', 'survivor_1', 'survivor_2', 'survivor_3', 'survivor_4'];
 const DEFAULT_SLOT_ROLES = {
@@ -23,8 +22,6 @@ const SHADOW_DEFAULTS = {
     cameraBounds: 15
 };
 
-// THREE.shadowMap.type values. Kept here as a plain map so the panel can populate a dropdown
-// without importing THREE.
 export const SHADOW_MAP_TYPES = {
     Basic: 0,
     PCF: 1,
@@ -32,7 +29,6 @@ export const SHADOW_MAP_TYPES = {
     VSM: 3
 };
 
-// THREE tone-mapping constants. Same rationale as SHADOW_MAP_TYPES.
 export const TONE_MAPPING_TYPES = {
     None: THREE.NoToneMapping,
     Linear: THREE.LinearToneMapping,
@@ -51,10 +47,7 @@ const WORLD_DEFAULTS = {
     shadowBias: SHADOW_DEFAULTS.bias,
     shadowNormalBias: SHADOW_DEFAULTS.normalBias,
     shadowRadius: SHADOW_DEFAULTS.radius,
-    // Directional-light orthographic shadow frustum. Larger bounds = shadows cover
-    // more of the scene at the cost of per-pixel sharpness (compensate with a
-    // higher shadowMapSize). Far controls how deep along the light direction the
-    // shadow camera reaches. Per-light extras still override these when set.
+    // Directional-light shadow frustum: bigger bounds cover more area but lose sharpness.
     directionalShadowBounds: SHADOW_DEFAULTS.cameraBounds,
     directionalShadowFar: SHADOW_DEFAULTS.far,
     toneMapping: 'ACESFilmic',
@@ -106,8 +99,7 @@ function configureShadow(light, extras = {}, world = WORLD_DEFAULTS) {
         light.shadow.camera.top = b;
         light.shadow.camera.bottom = -b;
     }
-    // Update the projection matrix AFTER bounds/far are set — otherwise the new
-    // frustum won't take effect until the next implicit update.
+    // Must update AFTER bounds/far are set, or the new frustum won't take effect.
     if (light.shadow.camera.updateProjectionMatrix) {
         light.shadow.camera.updateProjectionMatrix();
     }
@@ -136,7 +128,6 @@ class Registry extends EventTarget {
         this.liveCamera.position = vecToArr(liveCamera.position);
         this.liveCamera.rotation = [liveCamera.rotation.x, liveCamera.rotation.y, liveCamera.rotation.z];
         this.liveCamera.fov = liveCamera.fov;
-        // Reflect current scene/renderer state into the world spec so the panel reads accurate values.
         if (scene?.background?.getHexString) {
             this.world.backgroundColor = '#' + scene.background.getHexString();
         }
@@ -162,8 +153,6 @@ class Registry extends EventTarget {
         this.dispatchEvent(new CustomEvent(type, { detail }));
         this.dispatchEvent(new CustomEvent('change', { detail: { type, ...detail } }));
     }
-
-    // ===== Lights =====
 
     addLight(spec) {
         const id = spec.id || newId('light');
@@ -193,13 +182,8 @@ class Registry extends EventTarget {
     updateLight(id, partial, opts = {}) {
         const entry = this.lights.get(id);
         if (!entry) return;
-        // For spot lights: when the caller moves the position interactively but
-        // doesn't actively change the target, shift the target by the same X/Z
-        // delta so the cone keeps its aim direction. Y is left alone so a downward-
-        // pointing spot can be lifted/lowered without altering where it hits the
-        // floor. Off by default — only the gizmo and the lights-panel inputs opt in.
-        // Snapshot restores (preview/playback) must NOT track, since they need
-        // both position and target written verbatim from the keyframe.
+        // Spot tracking: when only position moves, slide the target with it so the cone
+        // keeps its aim. Y is held so vertical moves don't shift the floor-spot.
         if (opts.trackSpotTarget && entry.spec.type === 'Spot' && partial.position) {
             const newPos = vecToArr(partial.position);
             const oldPos = entry.spec.position;
@@ -327,8 +311,6 @@ class Registry extends EventTarget {
         }
     }
 
-    // ===== Slots =====
-
     addSlot(spec) {
         const role = spec.role || spec.id;
         if (!VALID_SLOT_ROLES.includes(role)) {
@@ -406,7 +388,6 @@ class Registry extends EventTarget {
         });
     }
 
-    // Returns transforms keyed by role for use by characters/api.js
     resolveCharacterPositions() {
         const result = { hunter: null, survivors: [null, null, null, null] };
         for (const slot of this.slots.values()) {
@@ -425,10 +406,8 @@ class Registry extends EventTarget {
         return result;
     }
 
-    // ===== Live Camera =====
-
     updateLiveCamera(partial) {
-        // Backward-compat: convert legacy target into rotation by snapshotting lookAt.
+        // Legacy saves stored target instead of rotation; convert via lookAt.
         if (partial.target && !partial.rotation && this.liveCameraRef) {
             const t = vecToArr(partial.target);
             const tmpPos = partial.position
@@ -464,8 +443,6 @@ class Registry extends EventTarget {
         this.emit('liveCamera:update', { spec: this.liveCamera });
     }
 
-    // ===== World (scene background + shadow settings) =====
-
     updateWorld(partial) {
         Object.assign(this.world, partial);
         this._applyWorldSpec();
@@ -487,7 +464,7 @@ class Registry extends EventTarget {
             if (typeVal != null && this.rendererRef.shadowMap.type !== typeVal) {
                 this.rendererRef.shadowMap.type = typeVal;
                 this.rendererRef.shadowMap.needsUpdate = true;
-                // Force material recompile so the new shadow map sampler is picked up.
+                // Material recompile needed: shadow map sampler is baked into the shader.
                 this.scene?.traverse(obj => {
                     if (obj.material) {
                         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -500,8 +477,7 @@ class Registry extends EventTarget {
             const tmVal = TONE_MAPPING_TYPES[this.world.toneMapping];
             if (tmVal != null && this.rendererRef.toneMapping !== tmVal) {
                 this.rendererRef.toneMapping = tmVal;
-                // Tone mapping is baked into each material's shader via a #define,
-                // so existing programs need a recompile to pick up the new mode.
+                // Material recompile needed: tone mapping is baked into the shader via #define.
                 this.scene?.traverse(obj => {
                     if (obj.material) {
                         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -513,15 +489,12 @@ class Registry extends EventTarget {
                 this.rendererRef.toneMappingExposure = this.world.toneMappingExposure;
             }
         }
-        // Re-apply shadow params on all shadow-casting lights.
         for (const entry of this.lights.values()) {
             if (entry.threeObject.castShadow) {
                 configureShadow(entry.threeObject, entry.spec.extras, this.world);
             }
         }
     }
-
-    // ===== Serialize / Hydrate =====
 
     serialize() {
         return {
@@ -534,11 +507,10 @@ class Registry extends EventTarget {
 
     hydrate(data) {
         if (!data) return;
-        // Clear existing first
         for (const id of Array.from(this.lights.keys())) this.removeLight(id);
         for (const id of Array.from(this.slots.keys())) this.removeSlot(id);
 
-        // World goes first so shadow settings are in effect when lights are created.
+        // World first so shadow settings are live when lights are created.
         if (data.world) {
             this.world = { ...WORLD_DEFAULTS, ...data.world };
             this._applyWorldSpec();

@@ -11,26 +11,14 @@ const DEG2RAD = Math.PI / 180;
 const expandedKeyframes = new Set();        // `${seqId}@${t}`
 const expandedSequences = new Set();        // seq ids currently expanded
 
-// Per-sequence "preview anchor": the scene state captured the first time the user
-// expands a keyframe in that sequence. Restored when the user deselects the
-// previewed keyframe. Anchors survive switching previews between keyframes in the
-// same sequence, so the user always returns to the original state on close —
-// "even after clicking multiple keyframes in a row".
+// Captured on first keyframe-expand in a sequence; restored on deselect so previews are reversible.
 const previewAnchors = new Map();           // seqId -> snapshot
 
-// Which keyframe is currently driving the live preview in each sequence. Used by
-// the registry-change listener so it knows where to write back edits.
 const activePreview = new Map();            // seqId -> { kf, key }
 
-// When the panel itself pushes a snapshot to the registry (on select/deselect, or
-// when a kf-detail input is edited), the resulting registry events would otherwise
-// loop back through the sync listener and re-capture the same values into the kf.
-// Set this true around any registry write the panel initiates so the listener skips.
+// Set while the panel writes to the registry, to skip the sync listener and avoid feedback loops.
 let suppressSync = false;
 
-// Apply a single snapshot's values for ONE target back into the registry. This
-// drives all the consequences (scene update, editor panel sync) the user expects
-// when previewing/restoring a keyframe.
 function applySnapshotToRegistry(snapshot, target) {
     if (!snapshot || !target) return;
     suppressSync = true;
@@ -52,8 +40,7 @@ function applySnapshotToRegistry(snapshot, target) {
                     color: v.color,
                     position: [...v.position],
                     target: [...v.target],
-                    // Merge with existing extras so fields the snapshot doesn't track
-                    // (e.g. decay, groundColor) aren't wiped.
+                    // Merge to keep untracked extras (decay, groundColor, …) intact.
                     extras: { ...(cur.extras || {}), ...(v.extras || {}) }
                 });
             }
@@ -73,10 +60,7 @@ function applySnapshotToRegistry(snapshot, target) {
     }
 }
 
-// While a keyframe is the active preview, any registry change to its target —
-// from gizmo drags, lightsPanel sliders, worldPanel inputs, etc. — is captured
-// back into the keyframe's snapshot. End result: editing in preview mode edits
-// the keyframe.
+// While a keyframe is being previewed, scene edits get written back into its snapshot.
 registry.addEventListener('change', (e) => {
     if (suppressSync) return;
     const detail = e.detail;
@@ -113,9 +97,7 @@ registry.addEventListener('change', (e) => {
     }
 });
 
-// Playback bypasses preview state; if a sequence starts playing or gets removed,
-// drop its anchor + active preview so we don't restore a stale snapshot later,
-// and tear down any path visualization it had.
+// Playback or removal invalidates preview state; drop it so we don't restore a stale snapshot.
 sequencer.addEventListener('seq:play', (e) => {
     previewAnchors.delete(e.detail.id);
     activePreview.delete(e.detail.id);
@@ -127,17 +109,13 @@ sequencer.addEventListener('seq:remove', (e) => {
     hidePath(e.detail.id);
 });
 
-// Keep the path in sync as the user edits the previewed keyframe (gizmo drag or
-// kf-detail input both flow through here via seq:update).
 sequencer.addEventListener('seq:update', (e) => {
     const seqId = e.detail.id;
     const active = activePreview.get(seqId);
     if (!active) return;
     const seq = sequencer.getSequence(seqId);
     if (!seq) return;
-    // The keyframe array stays sorted, so the previous keyframe is the one at
-    // the prior index. Look up by time (active.kf may be a stale reference if
-    // it's been replaced via updateSequence/duplicateKeyframe).
+    // Look up by time — active.kf may be a stale reference after updateSequence/duplicateKeyframe.
     const idx = seq.keyframes.findIndex(k => Math.abs(k.t - active.kf.t) < 0.001);
     if (idx < 0) return;
     const currentKf = seq.keyframes[idx];
@@ -153,36 +131,26 @@ function findPrevKf(seq, kf) {
 function kfKey(seqId, t) { return `${seqId}@${t.toFixed(3)}`; }
 
 function selectKeyframePreview(seq, kf, key) {
-    // Close any other expanded keyframe in this same sequence (preview is exclusive
-    // per sequence; the anchor we captured on the first open stays put).
+    // Preview is exclusive per sequence.
     for (const other of seq.keyframes) {
         const k = kfKey(seq.id, other.t);
         if (k !== key) expandedKeyframes.delete(k);
     }
-    // Capture the anchor only on the first open per sequence. Subsequent switches
-    // between keyframes keep this same anchor so deselecting always returns here.
+    // Anchor is captured once and preserved across keyframe switches in the same sequence.
     if (!previewAnchors.has(seq.id)) {
         previewAnchors.set(seq.id, captureSnapshot(seq.targets));
     }
     expandedKeyframes.add(key);
-    // Push the snapshot through the registry so the editor panels reflect the
-    // previewed state and any subsequent panel/gizmo edits naturally write back
-    // into the keyframe via the registry-change listener.
     applySnapshotToRegistry(kf.snapshot, seq.targets[0]);
     activePreview.set(seq.id, { kf, key });
-    // Visualize the path from the previous keyframe to this one.
     showPath(seq, kf, findPrevKf(seq, kf));
-    // Attach the gizmo to the target so the user can manipulate the previewed
-    // object immediately. Done last so the TransformControls "change" event the
-    // attach fires sees the object already at the snapshot pose.
+    // selectTarget last so TransformControls' attach event sees the object already posed.
     selectTarget(seq.targets[0]);
 }
 
 function deselectKeyframePreview(seq, key) {
     expandedKeyframes.delete(key);
-    // Stop accepting edits into this keyframe BEFORE we restore — otherwise the
-    // restore's registry events would loop into it (the suppress flag belt-and-
-    // suspenders this too, but clearing here keeps intent obvious).
+    // Clear active BEFORE the restore writes so registry events don't write back into the kf.
     activePreview.delete(seq.id);
     hidePath(seq.id);
     const anchor = previewAnchors.get(seq.id);
@@ -190,8 +158,7 @@ function deselectKeyframePreview(seq, key) {
     previewAnchors.delete(seq.id);
 }
 
-// Pulse helper — applies the .just-recorded class to a keyframe row after the render
-// settles. Defers via setTimeout 0 so any cascading renders complete first.
+// Defers via setTimeout 0 so cascading renders complete before adding the pulse class.
 function pulseKeyframeRow(seqId, t) {
     setTimeout(() => {
         const seqRow = document.querySelector(`.editor-row[data-id="${seqId}"]`);
@@ -210,7 +177,6 @@ function colorToHex(c) {
     return '#ffffff';
 }
 
-// Monochrome icons (single-color glyphs, no emoji color)
 const ICON_CAMERA = '▣';
 const ICON_LIGHT  = '✦';
 const ICON_SLOT   = '◆';
@@ -286,8 +252,6 @@ function diffSummary(seq, kf, prevKf) {
 
     return parts.length ? parts.join(' · ') : t('animations.noChange');
 }
-
-// ===== Detail sections (only rendered if target is in seq.targets) =====
 
 function liveCameraSection(kf) {
     const c = kf.snapshot.liveCamera;
@@ -409,9 +373,7 @@ function bindDetailInputs(container, seq, kf) {
                     target.parent[target.key] = el.value;
                 }
             });
-            // If this keyframe is currently the live preview, push the updated
-            // snapshot through the registry so the scene and the other editor
-            // panels reflect the change in real time.
+            // If this keyframe is the live preview, push the change through the registry too.
             const active = activePreview.get(seq.id);
             if (active && active.kf === kf) {
                 applySnapshotToRegistry(kf.snapshot, seq.targets[0]);
@@ -440,9 +402,7 @@ function keyframeRow(seq, kf, prevKf) {
             : `<div class="kf-diff">${diffSummary(seq, kf, prevKf)}</div>`}
     `;
 
-    // Collapsed: the whole row is the click target — clicking anywhere expands
-    // and previews. Expanded: only the head bar collapses, so clicks on labels /
-    // section titles inside the detail body don't accidentally close the row.
+    // Click on body when expanded must not collapse — only the head bar toggles.
     if (isOpen) {
         row.querySelector('.kf-head').onclick = (e) => {
             if (e.target.closest('input, button')) return;
@@ -477,9 +437,7 @@ function keyframeRow(seq, kf, prevKf) {
     };
 
     row.querySelector('.kf-delete').onclick = () => {
-        // If this keyframe was being previewed, restoring the anchor first leaves
-        // the scene in a sensible state after the delete; otherwise we'd be stuck
-        // showing a now-removed keyframe.
+        // Restore the anchor before deleting so the scene doesn't get stuck on a removed kf.
         if (expandedKeyframes.has(key)) deselectKeyframePreview(seq, key);
         sequencer.removeKeyframe(seq.id, kf.t);
         renderAnimationsPanel();
@@ -493,10 +451,7 @@ function keyframeRow(seq, kf, prevKf) {
             if (target.startsWith('light:')) sections.push(lightSection(kf, target.slice('light:'.length)));
             if (target.startsWith('slot:')) sections.push(slotSection(kf, target.slice('slot:'.length)));
         }
-        // Easing select controls the curve this keyframe uses to transition to the
-        // NEXT keyframe ("ease out of here"). The last keyframe's value is unused
-        // but kept around so the dropdown isn't a flicker-state when keyframes are
-        // appended later.
+        // Easing controls how this keyframe transitions to the NEXT one (ease out).
         const currentEasing = kf.easing || 'cubicInOut';
         const easingRow = `
             <label class="kf-easing-row" title="${t('animations.easingTooltip')}">${t('animations.easingToNext')}
@@ -531,8 +486,7 @@ function targetSection(seq) {
         ? t('animations.resetTitle')
         : t('animations.noKeyframesYet');
 
-    // Target is locked once the sequence is created — to change it, delete this
-    // sequence and add a new one (saves a lot of "what does it mean to swap" UX).
+    // Target is locked at sequence creation; to retarget, delete and recreate.
     if (!target) {
         return `
             <label>${t('animations.animating')}</label>
@@ -574,8 +528,6 @@ function sequenceRow(spec) {
         ? `<span class="muted">${t('animations.none')}</span>`
         : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
 
-    // Pill grid HTML — separate `kind` so the wire-up below can route each
-    // checkbox to spec.triggers vs spec.stopTriggers via data-kind.
     const triggerPills = (kind, current) => events.map(e => `
         <label class="trigger-pill">
             <input type="checkbox" data-kind="${kind}" value="${e}" ${current.includes(e) ? 'checked' : ''}>
@@ -635,10 +587,7 @@ function sequenceRow(spec) {
         </div>`}
     `;
 
-    // Collapsed: the whole row acts as a click target — clicking anywhere expands.
-    // Expanded: only clicks on the head bar collapse, so clicks inside the body
-    // (keyframe rows, trigger pills, labels…) don't bubble up and accidentally
-    // close the sequence.
+    // Click on body when expanded must not collapse — only the head bar toggles.
     if (isExpanded) {
         row.querySelector('.row-head').onclick = (e) => {
             if (e.target.closest('input, button')) return;
@@ -653,12 +602,10 @@ function sequenceRow(spec) {
         };
     }
 
-    // Name lives in the row-head — always present.
     row.querySelector('.name-input').oninput = (e) => {
         sequencer.updateSequence(spec.id, { name: e.target.value });
     };
 
-    // Play / Duplicate / Remove also live in the row-head.
     row.querySelector('.play-btn').onclick = () => {
         if (sequencer.isPlaying(spec.id)) {
             stopSequence(spec.id);
@@ -680,7 +627,6 @@ function sequenceRow(spec) {
 
     if (!isExpanded) return row;
 
-    // Target chip: body attaches the gizmo; reset jumps back to the first keyframe.
     row.querySelectorAll('.target-chip').forEach(chip => {
         chip.onclick = (e) => {
             if (e.target.closest('.target-reset')) return;
@@ -695,14 +641,12 @@ function sequenceRow(spec) {
         };
     });
 
-    // Loop toggle — re-renders because flipping it shows/hides the stop-triggers UI.
+    // Re-renders because the loop flag shows/hides the stop-triggers UI.
     row.querySelector('.loop-toggle').onchange = (e) => {
         sequencer.updateSequence(spec.id, { loop: e.target.checked });
         renderAnimationsPanel();
     };
 
-    // Start + stop trigger checkboxes are routed by data-kind. Each list owns
-    // exactly the seq field of the same name (triggers / stopTriggers).
     row.querySelectorAll('.trigger-list input[type="checkbox"]').forEach(cb => {
         cb.onchange = () => {
             const kind = cb.dataset.kind;
@@ -713,14 +657,12 @@ function sequenceRow(spec) {
         };
     });
 
-    // Keyframes — pass the prior keyframe so each row can render a diff line.
     const kfList = row.querySelector('.keyframe-list');
     spec.keyframes.forEach((kf, i) => {
         const prevKf = i > 0 ? spec.keyframes[i - 1] : null;
         kfList.appendChild(keyframeRow(spec, kf, prevKf));
     });
 
-    // Record new keyframe
     row.querySelector('.kf-record-btn').onclick = () => {
         const t = parseFloat(row.querySelector('.kf-new-time').value);
         if (Number.isNaN(t)) return;
@@ -762,9 +704,7 @@ export function renderAnimationsPanel() {
         const target = addBar.querySelector('#newSeqTarget').value;
         if (!target) return;
         const id = sequencer.addSequence({ target });
-        // Seed a keyframe at t=0 from the target's current state so the sequence
-        // has somewhere to interpolate from, and attach the gizmo to the chosen
-        // target so the user can immediately adjust toward the next keyframe.
+        // Seed an initial keyframe so the sequence has somewhere to interpolate from.
         sequencer.recordKeyframe(id, 0);
         selectTarget(target);
         expandedSequences.add(id);

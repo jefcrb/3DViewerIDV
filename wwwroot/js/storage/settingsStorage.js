@@ -1,5 +1,3 @@
-// Schema-aware settings storage. Preserves unknown keys across save and migrates legacy keys.
-
 const SETTINGS_FILE = './viewer_settings.json';
 let lastLoaded = null;
 
@@ -98,7 +96,7 @@ export async function loadSettings() {
     }
 }
 
-// Merge incoming patch into lastLoaded so unknown keys are preserved.
+// Merges into lastLoaded so unknown keys survive partial saves.
 export async function saveSettings(patch) {
     const merged = { ...(lastLoaded || {}), ...patch };
     lastLoaded = merged;
@@ -128,7 +126,6 @@ export function getLastLoaded() {
     return lastLoaded;
 }
 
-// Trigger a browser download of the current settings as JSON.
 export function exportSettings() {
     const data = lastLoaded || {};
     const json = JSON.stringify(data, null, 2);
@@ -144,8 +141,6 @@ export function exportSettings() {
     URL.revokeObjectURL(url);
 }
 
-// Parse a File, validate basic shape, and POST it to overwrite viewer_settings.json.
-// Throws on invalid JSON, non-object root, or network failure.
 export async function importSettings(file) {
     const text = await file.text();
     let parsed;

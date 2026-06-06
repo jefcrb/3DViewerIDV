@@ -39,7 +39,6 @@ export function setupScene(renderer) {
     return scene;
 }
 
-// Live (broadcast) camera — Theatre.js-driven; never gets OrbitControls.
 export function setupLiveCamera() {
     const camera = new THREE.PerspectiveCamera(
         50,
@@ -53,7 +52,6 @@ export function setupLiveCamera() {
     return camera;
 }
 
-// Editor (free-orbit) camera — OrbitControls always bound.
 export function setupEditorCamera() {
     const camera = new THREE.PerspectiveCamera(
         50,
@@ -78,7 +76,6 @@ export function setupEditorControls(camera, canvas) {
     return controls;
 }
 
-// Wireframe helper showing the live camera's frustum in editor mode.
 export function createLiveCameraHelper(liveCamera) {
     const helper = new THREE.CameraHelper(liveCamera);
     helper.visible = false;

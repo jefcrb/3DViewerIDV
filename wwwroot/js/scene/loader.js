@@ -61,8 +61,6 @@ function findDummyModels(loadedScene) {
     return { hunter, survivors };
 }
 
-// Decompose dummy.matrixWorld into world-space position/quaternion/scale,
-// then convert quaternion → Euler so the rest of the codebase can keep using Euler.
 function worldTransformFromDummy(dummy) {
     dummy.updateWorldMatrix(true, false);
     const position = new THREE.Vector3();
@@ -191,10 +189,7 @@ export function loadBlenderScene(scene, liveCamera) {
     });
 }
 
-// Layer editor slot overrides on top of the dummy defaults. Called after the
-// registry has been hydrated from saved settings AND whenever a slot changes.
-// Also nudges any already-loaded character model to the new transform so edits
-// are visible immediately in the scene.
+// Layers registry slot overrides over dummy defaults and nudges loaded models to match.
 export function applyRegistrySlotsToCharacterPositions(registry) {
     const fromRegistry = registry.resolveCharacterPositions();
     const updates = { hunter: null, survivors: [null, null, null, null] };
@@ -214,7 +209,6 @@ export function applyRegistrySlotsToCharacterPositions(registry) {
         }
     }
 
-    // Push transforms to already-loaded character models
     const hunterChar = characterState.loadedCharacters.hunter;
     if (hunterChar?.model && updates.hunter) {
         hunterChar.model.position.copy(updates.hunter.position);

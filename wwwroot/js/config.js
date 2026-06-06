@@ -21,7 +21,6 @@ export const DEFAULT_POSITIONS = {
 
 export const TARGET_HEIGHT = 2.5;
 
-// ?dev=true
 function getDevMode() {
     const urlParams = new URLSearchParams(window.location.search);
     return urlParams.get('dev') === 'true';

@@ -1,4 +1,3 @@
-// Outro animation
 export const OUTRO_CONFIG = {
     duration: 600,          // ms
     endOffset: -1.0,
@@ -35,10 +34,8 @@ export function playOutroAnimation(model) {
             const progress = Math.min(elapsed / config.duration, 1);
             const eased = easingFn(progress);
 
-            // Animate position
             model.position.y = startY + (endY - startY) * eased;
 
-            // Animate opacity
             if (config.fadeOut) {
                 model.traverse((child) => {
                     if (child.isMesh && child.material) {

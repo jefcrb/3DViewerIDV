@@ -1,12 +1,4 @@
-// Visualizes the interpolation path between two consecutive keyframes for the
-// currently selected keyframe. Only draws for position (a straight line — the
-// snapshot interp is per-component linear; easing controls timing along that
-// line, not its shape) and for liveCamera rotation (forward-direction arrows
-// at each endpoint). Light "rotation" isn't meaningful here — lights are aimed
-// via their target point.
-//
-// Re-renders cheaply: the group is destroyed + rebuilt on every showPath call.
-// Geometry is tiny (a 2-vertex line + two small spheres + maybe two arrows).
+// Draws a position-line between two keyframes plus forward arrows for liveCamera.
 
 import * as THREE from 'three';
 import { registry } from './registry.js';
@@ -56,7 +48,7 @@ function overlayBasicMaterial(color, opacity) {
 }
 
 function addForwardArrow(group, position, rotation, color) {
-    // Camera looks down -Z in its local frame.
+    // Camera local forward is -Z.
     const dir = new THREE.Vector3(0, 0, -1)
         .applyEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2], 'XYZ'));
     const arrow = new THREE.ArrowHelper(
@@ -103,7 +95,6 @@ export function showPath(seq, kf, prevKf) {
     const group = new THREE.Group();
     group.userData.isPathPreview = true;
 
-    // Line between positions
     const lineGeom = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(...fromPos),
         new THREE.Vector3(...toPos)
@@ -116,7 +107,6 @@ export function showPath(seq, kf, prevKf) {
     line.renderOrder = 999;
     group.add(line);
 
-    // From marker (smaller, darker)
     const fromSphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.08, 8, 6),
         overlayBasicMaterial(COLOR_FROM, 0.75)
@@ -125,7 +115,6 @@ export function showPath(seq, kf, prevKf) {
     fromSphere.renderOrder = 999;
     group.add(fromSphere);
 
-    // To marker (larger, brighter — this is the keyframe the user just selected)
     const toSphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.12, 10, 8),
         overlayBasicMaterial(COLOR_TO, 0.95)
@@ -134,9 +123,7 @@ export function showPath(seq, kf, prevKf) {
     toSphere.renderOrder = 999;
     group.add(toSphere);
 
-    // Forward-direction arrows only for camera targets (lights don't have a
-    // rotation that's meaningful for visualization; slot/character rotation is
-    // model-dependent so the +Z/-Z convention is unreliable).
+    // Lights aim via target point; slot rotation is model-dependent — only camera arrows.
     if (target === 'liveCamera') {
         const fromRot = getRotation(prevKf.snapshot, target);
         const toRot = getRotation(kf.snapshot, target);

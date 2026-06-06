@@ -1,7 +1,5 @@
 import { registry } from '../editor/registry.js';
 
-// Default 3-point + sun lighting rig. Now a registry seeder rather than direct THREE.Light creation.
-// The registry creates the actual Three.js light objects and adds them to the scene.
 export const DEFAULT_LIGHTS = [
     {
         id: 'hemisphere',
@@ -52,7 +50,6 @@ export const DEFAULT_LIGHTS = [
     }
 ];
 
-// Seed registry with default rig only if no lights have been hydrated from settings.
 export function setupStudioLighting() {
     if (registry.lights.size > 0) {
         console.log('Lights already hydrated from settings, skipping default seed');

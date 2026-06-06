@@ -1,8 +1,4 @@
-// In-browser translation table. Keys are namespaced by where the string lives so
-// the same English word can translate differently depending on context (e.g.
-// `common.play` vs `animations.play`). `t(key)` falls back to the English value
-// when a translation is missing, and to the key itself as a last resort, so a
-// missing entry never blanks out the UI.
+// Keys are namespaced by panel so the same English word can translate differently in context.
 
 const SUPPORTED = ['en', 'zh'];
 const LS_KEY = 'viewer.lang';
@@ -261,15 +257,13 @@ export function setLanguage(lang) {
     try { localStorage.setItem(LS_KEY, lang); } catch {}
 }
 
-// Toggle between supported languages and reload so every render function picks
-// up the new strings. Editor state is autosaved so nothing is lost.
+// Reloads so static render functions pick up new strings; editor state is autosaved.
 export function toggleLanguage() {
     const idx = SUPPORTED.indexOf(currentLang);
     setLanguage(SUPPORTED[(idx + 1) % SUPPORTED.length]);
     location.reload();
 }
 
-// `key` is a dot-namespaced lookup. Falls back to English, then to `key` itself.
 export function t(key) {
     return translations[currentLang]?.[key]
         ?? translations.en[key]

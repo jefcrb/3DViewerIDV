@@ -4,8 +4,7 @@ import { t } from '../i18n.js';
 
 const LIGHT_TYPES = ['Directional', 'Point', 'Spot', 'Hemisphere', 'Ambient'];
 
-// Localised label for a light type — value attribute stays English so saved data
-// keeps working regardless of UI language.
+// Value attribute stays English so saved data keeps working regardless of UI language.
 function lightTypeLabel(type) { return t(`lights.types.${type}`); }
 
 function colorString(c) {

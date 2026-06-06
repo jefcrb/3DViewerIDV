@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 
-// Material and Rendering Configuration
 export const MATERIAL_CONFIG = {
     shadows: {
         castShadow: true,
@@ -18,7 +17,6 @@ export const MATERIAL_CONFIG = {
     }
 };
 
-// Shadow settings
 export function applyMaterialSettings(model) {
     const config = MATERIAL_CONFIG;
 

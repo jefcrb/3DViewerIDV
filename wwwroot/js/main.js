@@ -54,7 +54,6 @@ function animate(currentTime) {
         if (survivor?.mixer) survivor.mixer.update(delta);
     });
 
-    // Drive any active sequences. update() takes wall-clock seconds.
     sequencer.update(currentTime / 1000);
 
     if (editorControls && editorControls.enabled) {
@@ -71,35 +70,29 @@ function animate(currentTime) {
 (async function() {
     try {
         const settings = await loadSettings();
-        // settings.rendering.rendererType is intentionally ignored: WebGPU is broken on
-        // many configurations and viewer_settings.json is gitignored, so a stale "webgpu"
-        // value would otherwise leave users with a non-functional viewer.
+        // rendererType is ignored: WebGPU is broken on many configs; force webgl.
         renderer = await setupRenderer(canvas, 'webgl');
         scene = setupScene(renderer);
         liveCamera = setupLiveCamera();
         editorCamera = setupEditorCamera();
         editorControls = setupEditorControls(editorCamera, canvas);
         cameraHelper = createLiveCameraHelper(liveCamera);
-        // TransformControls requires its target to be in a scene graph
+        // TransformControls needs its target in the scene graph.
         scene.add(liveCamera);
         scene.add(cameraHelper);
 
         setupWindowResize([liveCamera, editorCamera], renderer);
 
-        // Initialize registry with scene + liveCamera + renderer references
         registry.init(scene, liveCamera, renderer);
 
-        // Hydrate registry from saved editor settings BEFORE seeding defaults
         if (settings?.editor) {
             registry.hydrate(settings.editor);
         }
 
-        // Seed default lighting rig if registry is still empty
         setupStudioLighting();
 
         const hadSavedLiveCamera = !!settings?.editor?.liveCamera;
         try {
-            // Skip Blender camera override if user has a saved live camera
             await loadBlenderScene(scene, hadSavedLiveCamera ? null : liveCamera);
             await loadCustomScales();
         } catch (error) {
@@ -107,37 +100,28 @@ function animate(currentTime) {
             createMinimalFallbackScene(scene);
         }
 
-        // Sync registry's stored liveCamera with the actual camera state after Blender
-        // load (only if user had no saved liveCamera — otherwise registry already holds
-        // the authored values).
         if (!hadSavedLiveCamera) {
             registry.liveCamera.position = [liveCamera.position.x, liveCamera.position.y, liveCamera.position.z];
             registry.liveCamera.rotation = [liveCamera.rotation.x, liveCamera.rotation.y, liveCamera.rotation.z];
             registry.liveCamera.fov = liveCamera.fov;
         }
 
-        // Seed default slots from dummies if none persisted
         if (registry.slots.size === 0) {
             registry.seedDefaultSlots(sceneState.dummyTransforms);
         }
 
-        // Layer registry slot overrides onto current character positions
         applyRegistrySlotsToCharacterPositions(registry);
 
-        // Keep characterPositions in sync whenever slots change
         registry.addEventListener('slots:update', () => applyRegistrySlotsToCharacterPositions(registry));
         registry.addEventListener('slots:add', () => applyRegistrySlotsToCharacterPositions(registry));
         registry.addEventListener('slots:remove', () => applyRegistrySlotsToCharacterPositions(registry));
 
         setupCharacterAPI(scene);
 
-        // Hydrate sequences from saved settings
         if (Array.isArray(settings?.editor?.sequences)) {
             sequencer.hydrate(settings.editor.sequences);
         }
 
-        // Initialize editor only in DEV mode. In DEV the editor's setMode('editor')
-        // call disables auto-firing; in non-DEV the live view fires triggers freely.
         if (DEV) {
             const editorMod = await import('./editor/editorMode.js');
             const camPanelMod = await import('./editor/cameraPanel.js');
@@ -154,14 +138,12 @@ function animate(currentTime) {
             document.getElementById('topActions').style.display = 'flex';
         }
 
-        // Preload all character models in background
         preloadAllModels().catch(err => {
             console.warn('Model preload encountered errors:', err);
         });
 
         animate();
 
-        // Fire scene_loaded after first frame so animations can react
         requestAnimationFrame(() => fireSceneLoaded());
 
         if (DEV) {

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 
-// Intro animation
 export const INTRO_CONFIG = {
     duration: 1600,         // ms
     startOffset: 1.5,
@@ -24,7 +23,6 @@ const easingFunctions = {
     easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 };
 
-// Create smoke particle sprite texture
 function createSmokeTexture() {
     const canvas = document.createElement('canvas');
     canvas.width = 128;
@@ -42,18 +40,15 @@ function createSmokeTexture() {
     return new THREE.CanvasTexture(canvas);
 }
 
-// Stop intro animation and clean up resources
 export function stopIntroAnimation(model) {
     if (!model.userData.introAnimation) return;
 
     console.log('Stopping intro animation for model');
 
-    // Cancel animation frame
     if (model.userData.introAnimation.rafId) {
         cancelAnimationFrame(model.userData.introAnimation.rafId);
     }
 
-    // Remove and dispose smoke particles
     model.userData.introAnimation.smokeParticles.forEach((sprite) => {
         if (sprite.parent) {
             sprite.parent.remove(sprite);
@@ -66,7 +61,6 @@ export function stopIntroAnimation(model) {
         }
     });
 
-    // Reset material opacity if fade-in was in progress
     if (INTRO_CONFIG.fadeIn) {
         model.traverse((child) => {
             if (child.isMesh && child.material) {
@@ -76,28 +70,20 @@ export function stopIntroAnimation(model) {
         });
     }
 
-    // Clear animation state
     model.userData.introAnimation = null;
 }
 
 export function playIntroAnimation(model) {
-    // Stop any existing intro animation
     stopIntroAnimation(model);
 
     const config = INTRO_CONFIG;
-    // const startY = model.position.y - config.startOffset;
-    // const endY = model.position.y;
     const startTime = performance.now();
 
-    // model.position.y = startY;
-
-    // Initialize animation state on model
     model.userData.introAnimation = {
         rafId: null,
         smokeParticles: []
     };
 
-    // Set initial opacity to 0
     if (config.fadeIn) {
         model.traverse((child) => {
             if (child.isMesh && child.material) {
@@ -107,7 +93,6 @@ export function playIntroAnimation(model) {
         });
     }
 
-    // Create smoke particles
     if (config.smoke.enabled) {
         const smokeTexture = createSmokeTexture();
         const spriteMaterial = new THREE.SpriteMaterial({
@@ -145,10 +130,6 @@ export function playIntroAnimation(model) {
         const progress = Math.min(elapsed / config.duration, 1);
         const eased = easingFn(progress);
 
-        // Translation animation (commented out as example)
-        // model.position.y = startY + (endY - startY) * eased;
-
-        // Fade in character
         if (config.fadeIn && progress < 1) {
             model.traverse((child) => {
                 if (child.isMesh && child.material) {
@@ -157,12 +138,10 @@ export function playIntroAnimation(model) {
             });
         }
 
-        // Animate smoke particles
         if (config.smoke.enabled) {
             const totalSmokeDuration = config.duration * config.smoke.dissipateDuration;
             const dissipateStartTime = config.duration * config.smoke.dissipateDelay;
 
-            // Calculate smoke dissipation progress
             let smokeOpacity = config.smoke.opacity;
             if (elapsed > dissipateStartTime) {
                 const dissipateElapsed = elapsed - dissipateStartTime;
@@ -172,19 +151,13 @@ export function playIntroAnimation(model) {
             }
 
             model.userData.introAnimation.smokeParticles.forEach((sprite) => {
-                // Rise up
                 sprite.position.y = sprite.userData.initialY + (progress * sprite.userData.riseSpeed);
-
-                // Fade out gradually after delay
                 sprite.material.opacity = smokeOpacity;
-
-                // Expand slightly
                 const scale = 1.5 + progress * 0.5;
                 sprite.scale.set(scale, scale, 1);
             });
         }
 
-        // Check if both character and smoke are done
         const totalSmokeDuration = config.duration * config.smoke.dissipateDuration;
         const smokeDone = !config.smoke.enabled || elapsed >= totalSmokeDuration;
         const characterDone = progress >= 1;
@@ -192,7 +165,6 @@ export function playIntroAnimation(model) {
         if (!smokeDone || !characterDone) {
             model.userData.introAnimation.rafId = requestAnimationFrame(animate);
         } else {
-            // Cleanup
             if (config.fadeIn) {
                 model.traverse((child) => {
                     if (child.isMesh && child.material) {
@@ -202,13 +174,11 @@ export function playIntroAnimation(model) {
                 });
             }
 
-            // Remove smoke particles
             model.userData.introAnimation.smokeParticles.forEach((sprite) => {
                 model.parent.remove(sprite);
                 sprite.material.dispose();
             });
 
-            // Clear animation state
             model.userData.introAnimation = null;
         }
     }
