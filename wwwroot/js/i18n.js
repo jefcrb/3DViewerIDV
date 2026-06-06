@@ -13,7 +13,6 @@ const translations = {
         'topActions.import': 'Import',
         'topActions.importTitle': 'Replace settings from a JSON file',
         'topActions.langToggle': '中文',
-        'topActions.perfToggleTitle': 'Toggle performance monitor (P)',
 
         // === editor header ===
         'header.title': '3D EDITOR',
@@ -78,6 +77,7 @@ const translations = {
         'world.toneMapping': 'Tone mapping',
         'world.toneMode': 'Mode',
         'world.exposure': 'Exposure',
+        'world.perfHint': 'Tip: press <kbd>P</kbd> to toggle the performance monitor.',
 
         // === animations panel ===
         'animations.experimental': '<strong>Experimental:</strong> this feature is still in development and may misbehave or change between updates.',
@@ -129,7 +129,6 @@ const translations = {
         'topActions.import': '导入',
         'topActions.importTitle': '从 JSON 文件替换设置',
         'topActions.langToggle': 'EN',
-        'topActions.perfToggleTitle': '切换性能监视器 (P)',
 
         // === editor header ===
         'header.title': '3D 编辑器',
@@ -194,6 +193,7 @@ const translations = {
         'world.toneMapping': '色调映射',
         'world.toneMode': '模式',
         'world.exposure': '曝光',
+        'world.perfHint': '提示：按 <kbd>P</kbd> 切换性能监视器。',
 
         // === animations panel ===
         'animations.experimental': '<strong>实验性功能：</strong> 此功能仍在开发中，可能会出现问题或在更新中发生变化。',

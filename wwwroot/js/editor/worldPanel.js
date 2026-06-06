@@ -73,6 +73,9 @@ export function renderWorldPanel() {
                 </label>
             </div>
         </div>
+        <div class="add-bar">
+            <span style="color:#b3b3b3; flex:1; font-size:11px;">${t('world.perfHint')}</span>
+        </div>
     `;
 
     pane.querySelector('#worldBgColor').oninput = (e) => {
