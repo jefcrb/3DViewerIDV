@@ -1,23 +1,10 @@
-// Trigger event bus. Sequences carry start-trigger and (when looping) stop-trigger
-// lists. Firing an event:
-//   - plays every sequence whose start-triggers include the event name
-//     (with iterationCount = Infinity if seq.loop, else 1).
-//   - stops every looping sequence whose stop-triggers include the event name.
-// A loop can therefore be started and stopped multiple times by different events.
-//
-// Auto-triggers (fired by characters/api.js, scene_loaded, mode changes, etc.) only
-// act on sequences in live mode. Editor mode is for authoring; the user manually
-// clicks Play to test.
-
 import { sequencer } from './sequencer.js';
 
 const bus = new EventTarget();
 
 export const STANDARD_EVENTS = [
     'scene_loaded',
-    'live_mode_entered',
     'hunter_selected',
-    'hunter_changed',
     'hunter_deselected',
     'survivor_1_selected',
     'survivor_2_selected',
@@ -53,8 +40,6 @@ export function listKnownEvents() {
     return [...STANDARD_EVENTS, ...userEvents];
 }
 
-// Always fires the DOM event (for listeners), but only plays/stops sequences in
-// live mode.
 export function fire(eventName, detail = {}) {
     console.log(`[trigger] ${eventName}`, detail);
     bus.dispatchEvent(new CustomEvent(eventName, { detail }));
@@ -72,8 +57,7 @@ export function fire(eventName, detail = {}) {
     }
 }
 
-// Manual play helper (used by the Animations panel's Play button — bypasses
-// firingAllowed so editor previews work).
+// Bypasses firingAllowed so the Animations panel's Play button works in editor mode.
 export function playSequence(id, opts) {
     sequencer.play(id, opts);
 }

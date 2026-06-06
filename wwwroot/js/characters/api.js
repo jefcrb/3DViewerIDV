@@ -37,12 +37,9 @@ function fireDiffEvents(jsonData) {
     const newHunterKey = characterKey(jsonData.hunter);
     if (newHunterKey !== lastHunterKey) {
         if (newHunterKey === null) {
-            // had a hunter, now don't — fired only when going from something to nothing
             fire('hunter_deselected', {});
-        } else if (lastHunterKey === null) {
-            fire('hunter_selected', { name: jsonData.hunter?.name });
         } else {
-            fire('hunter_changed', { name: jsonData.hunter?.name });
+            fire('hunter_selected', { name: jsonData.hunter?.name });
         }
     }
     lastHunterKey = newHunterKey;
@@ -76,7 +73,6 @@ export function setupCharacterAPI(scene) {
             hideDummyModels(sceneState.dummyModels);
         }
 
-        // Always recompute current positions from the latest registry-merged state
         const hunterTransform = sceneState.characterPositions.hunter;
         const survivorTransforms = sceneState.characterPositions.survivors;
 

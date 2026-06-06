@@ -1,8 +1,5 @@
-// Snapshot-based animation system.
-// A sequence is a list of keyframes; its duration is the max keyframe time. Each keyframe captures a snapshot
-// of the scene state (lights / slots / live camera). Playback interpolates between
-// consecutive keyframes and writes the interpolated values directly to the Three.js
-// objects, bypassing the registry so we don't fire change events or trigger auto-save.
+// Snapshot-based keyframe animation. Playback writes directly to Three.js objects,
+// bypassing the registry so it doesn't fire change events or trigger auto-save.
 
 import * as THREE from 'three';
 import { registry, hexToInt, intToHex } from '../editor/registry.js';
@@ -12,8 +9,6 @@ function newId(prefix) {
     if (crypto && crypto.randomUUID) return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
     return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
-
-// ===== Easing =====
 
 export const EASING_NAMES = ['linear', 'cubicIn', 'cubicOut', 'cubicInOut', 'sineIn', 'sineOut', 'sineInOut'];
 
@@ -29,8 +24,6 @@ function ease(name, t) {
         default: return t;
     }
 }
-
-// ===== Snapshot capture / interpolation =====
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function lerpVec3(a, b, t) {
@@ -76,9 +69,7 @@ function captureLiveCamera() {
     };
 }
 
-// Capture current scene state, optionally restricted to a list of targets.
-// Target IDs: "liveCamera", "light:<id>", "slot:<id>". If `targets` is null/undefined,
-// captures everything.
+// Target IDs: "liveCamera", "light:<id>", "slot:<id>". Null/undefined captures all.
 export function captureSnapshot(targets) {
     const snapshot = { lights: {}, slots: {}, liveCamera: null };
 
@@ -105,7 +96,6 @@ export function captureSnapshot(targets) {
     return snapshot;
 }
 
-// List all targets currently available based on registry contents.
 export function availableTargets() {
     const all = ['liveCamera'];
     for (const spec of registry.listLights()) all.push(`light:${spec.id}`);
@@ -113,8 +103,6 @@ export function availableTargets() {
     return all;
 }
 
-// Infer target list from an existing snapshot (used for backward compat with sequences
-// saved before targets were a thing).
 function inferTargetsFromKeyframes(keyframes) {
     const set = new Set();
     for (const kf of keyframes) {
@@ -167,8 +155,6 @@ function interpolateSnapshot(a, b, t) {
     return out;
 }
 
-// ===== Apply snapshot to scene (bypasses registry; no events) =====
-
 function applyLightSnapshot(id, vals) {
     const entry = registry.getLight(id);
     if (!entry) return;
@@ -202,7 +188,7 @@ function applySlotSnapshot(id, vals) {
         const m = charData.model;
         if (vals.position) m.position.set(...vals.position);
         if (vals.rotation) m.rotation.set(...vals.rotation);
-        // Scale animation is tricky because of per-character normalization; skip for now.
+        // Scale skipped: per-character height normalization makes it tricky to compose.
     }
 }
 
@@ -213,7 +199,7 @@ function applyLiveCameraSnapshot(vals) {
     if (vals.rotation) {
         cam.rotation.set(vals.rotation[0], vals.rotation[1], vals.rotation[2]);
     } else if (vals.target) {
-        // Backward-compat for snapshots authored before rotation was stored.
+        // Legacy snapshots stored target instead of rotation.
         cam.lookAt(vals.target[0], vals.target[1], vals.target[2]);
     }
     if (vals.fov != null && Math.abs(cam.fov - vals.fov) > 0.001) {
@@ -232,13 +218,11 @@ export function applySnapshot(snapshot) {
     if (snapshot.liveCamera) applyLiveCameraSnapshot(snapshot.liveCamera);
 }
 
-// Restore scene from registry's base state (used when a sequence ends).
 function restoreFromRegistry(animatedKeys) {
     for (const id of animatedKeys.lights) {
         const entry = registry.getLight(id);
         if (entry) registry._applyLightSpec(entry.threeObject, entry.spec);
     }
-    // For slots, re-apply the slot transform to the loaded character model.
     for (const id of animatedKeys.slots) {
         const slot = registry.getSlot(id);
         if (!slot) continue;
@@ -266,8 +250,6 @@ function animatedKeysOf(sequence) {
     return { lights: [...keys.lights], slots: [...keys.slots], liveCamera: keys.liveCamera };
 }
 
-// ===== Sequencer =====
-
 class Sequencer extends EventTarget {
     constructor() {
         super();
@@ -291,9 +273,7 @@ class Sequencer extends EventTarget {
 
     addSequence(spec = {}) {
         const id = spec.id || newId('seq');
-        // Easing is per-keyframe now. Each keyframe controls how it transitions to
-        // the NEXT keyframe ("eases out"). Default cubicInOut. On hydrate of older
-        // saves where easing was sequence-level, that value seeds every keyframe.
+        // Legacy saves stored easing at the sequence level; seed it into every keyframe.
         const seqLevelEasing = EASING_NAMES.includes(spec.easing) ? spec.easing : 'cubicInOut';
         const keyframes = Array.isArray(spec.keyframes)
             ? spec.keyframes.map(k => ({
@@ -302,10 +282,7 @@ class Sequencer extends EventTarget {
                 easing: EASING_NAMES.includes(k.easing) ? k.easing : seqLevelEasing
             }))
             : [];
-        // Each sequence animates exactly one target, picked at creation. Callers can
-        // pass `target` (preferred) or `targets[]` (back-compat with sequences saved
-        // before this constraint). Anything beyond the first target is dropped on
-        // next save; orphan snapshot data in keyframes is harmless and ignored.
+        // Legacy `targets[]` saves are accepted but collapsed to the first entry.
         let target = spec.target;
         if (!target && Array.isArray(spec.targets) && spec.targets.length > 0) {
             target = spec.targets[0];
@@ -314,16 +291,12 @@ class Sequencer extends EventTarget {
             target = inferTargetsFromKeyframes(keyframes)[0] || null;
         }
         const targets = target ? [target] : [];
-        // Loop is now an explicit boolean on the sequence (not a magic 'loop' entry
-        // inside triggers). Migrate: if old saves have 'loop' in the trigger list,
-        // flip the bool and route the trigger to 'live_mode_entered' so the old
-        // "resume on entering live mode" behaviour keeps working.
+        // Legacy saves expressed loop via a magic 'loop' entry in triggers.
         let triggers = Array.isArray(spec.triggers) ? [...spec.triggers] : [];
         let loop = !!spec.loop;
         if (triggers.includes('loop')) {
             loop = true;
             triggers = triggers.filter(t => t !== 'loop');
-            if (!triggers.includes('live_mode_entered')) triggers.push('live_mode_entered');
         }
         const stopTriggers = Array.isArray(spec.stopTriggers) ? [...spec.stopTriggers] : [];
         const normalized = {
@@ -340,8 +313,6 @@ class Sequencer extends EventTarget {
         return id;
     }
 
-    // Effective duration of a sequence = the highest keyframe time. With one keyframe
-    // (or none), duration is 0 and playback is essentially static.
     effectiveDuration(seq) {
         if (!seq || seq.keyframes.length === 0) return 0;
         let max = 0;
@@ -349,8 +320,6 @@ class Sequencer extends EventTarget {
         return max;
     }
 
-    // Deep-clone a sequence and register the copy under a new id. Used by the
-    // duplicate button in the panel header.
     duplicateSequence(id) {
         const seq = this.sequences.get(id);
         if (!seq) return null;
@@ -360,8 +329,6 @@ class Sequencer extends EventTarget {
             triggers: [...seq.triggers],
             stopTriggers: [...(seq.stopTriggers || [])],
             targets: [...seq.targets],
-            // JSON.stringify is enough — snapshots are plain arrays + numbers + strings.
-            // Each keyframe gets its own snapshot, so editing one copy won't bleed back.
             keyframes: seq.keyframes.map(k => ({
                 t: k.t,
                 snapshot: JSON.parse(JSON.stringify(k.snapshot)),
@@ -395,7 +362,6 @@ class Sequencer extends EventTarget {
         const snapshot = captureSnapshot(seq.targets);
         const idx = seq.keyframes.findIndex(k => Math.abs(k.t - t) < 0.001);
         if (idx >= 0) {
-            // Preserve the existing easing when re-recording at the same time.
             seq.keyframes[idx] = { t, snapshot, easing: seq.keyframes[idx].easing || 'cubicInOut' };
         } else {
             seq.keyframes.push({ t, snapshot, easing: 'cubicInOut' });
@@ -413,15 +379,10 @@ class Sequencer extends EventTarget {
         this._emit('seq:update', { id: seqId, spec: seq });
     }
 
-    // ↺ button — jump the target's registry state to the value stored in the earliest
-    // keyframe of this sequence. If the sequence is currently playing, stop it first so
-    // the next frame's update() doesn't immediately overwrite the value we just wrote.
-    // To "update home", re-record keyframe[0] (or whichever is earliest).
     resetTarget(seqId, target) {
         const seq = this.sequences.get(seqId);
         if (!seq || seq.keyframes.length === 0) return false;
 
-        // Keyframes are kept sorted by time, so [0] is the earliest.
         const earliest = seq.keyframes[0];
         if (!earliest?.snapshot) return false;
 
@@ -467,8 +428,6 @@ class Sequencer extends EventTarget {
         return false;
     }
 
-    // Copy a keyframe's snapshot into a new keyframe at the end of the sequence
-    // (t = max(existing times) + 1). Returns the new t so the caller can pulse / focus it.
     duplicateKeyframe(seqId, t) {
         const seq = this.sequences.get(seqId);
         if (!seq) return null;
@@ -478,7 +437,6 @@ class Sequencer extends EventTarget {
             ? Math.max(...seq.keyframes.map(k => k.t))
             : 0;
         const newT = lastT + 1;
-        // Deep clone so the new keyframe is fully independent of the source.
         const cloned = JSON.parse(JSON.stringify(source.snapshot));
         seq.keyframes.push({ t: newT, snapshot: cloned, easing: source.easing || 'cubicInOut' });
         seq.keyframes.sort((a, b) => a.t - b.t);
@@ -494,8 +452,6 @@ class Sequencer extends EventTarget {
         if (seq.keyframes.length !== before) this._emit('seq:update', { id, spec: seq });
     }
 
-    // Mutate the snapshot of a keyframe in place via a callback. The callback receives
-    // the snapshot object and may mutate it directly; the sequencer fires seq:update.
     updateKeyframe(seqId, t, mutator) {
         const seq = this.sequences.get(seqId);
         if (!seq) return;
@@ -547,7 +503,6 @@ class Sequencer extends EventTarget {
         return this.active.has(id);
     }
 
-    // Called once per frame. `seconds` is wall-clock time in seconds.
     update(seconds) {
         this.now = seconds;
         for (const [id, runner] of Array.from(this.active.entries())) {
@@ -555,10 +510,6 @@ class Sequencer extends EventTarget {
             const duration = this.effectiveDuration(seq);
             const elapsed = seconds - runner.startTime;
 
-            // Sequences with zero/no-length play their single keyframe once and then end
-            // (unless looping, in which case they stay parked on that frame).
-            // On natural finish the scene is left as the animation set it — we no
-            // longer revert to the registry. To rewind, use the ↺ button on the target.
             if (duration <= 0) {
                 this._tickSequence(seq, 0);
                 if (runner.iterationCount !== Infinity) {
@@ -573,8 +524,7 @@ class Sequencer extends EventTarget {
 
             if (runner.iterationCount !== Infinity && iterations >= runner.iterationCount) {
                 this.active.delete(id);
-                // Park on the final keyframe so the scene reflects the animation's
-                // end state cleanly, rather than wherever the previous tick landed.
+                // Park on the final keyframe so the end state is exact, not wherever the tick landed.
                 const last = seq.keyframes[seq.keyframes.length - 1];
                 if (last) applySnapshot(last.snapshot);
                 this._emit('seq:stop', { id });
@@ -605,7 +555,6 @@ class Sequencer extends EventTarget {
         if (t >= b.t) { applySnapshot(b.snapshot); return; }
 
         const localU = (t - a.t) / (b.t - a.t);
-        // `a.easing` controls the curve from a to b ("ease out of a").
         const eased = ease(a.easing || 'cubicInOut', localU);
         applySnapshot(interpolateSnapshot(a.snapshot, b.snapshot, eased));
     }

@@ -8,7 +8,7 @@ import { renderAnimationsPanel } from './animationsPanel.js';
 import { renderWorldPanel } from './worldPanel.js';
 import { saveSettings, exportSettings, importSettings } from '../storage/settingsStorage.js';
 import { sequencer } from '../animation/sequencer.js';
-import { setFiringAllowed, fire } from '../animation/triggers.js';
+import { setFiringAllowed } from '../animation/triggers.js';
 import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
 import { t, toggleLanguage } from '../i18n.js';
 
@@ -22,7 +22,6 @@ let selectedTargetId = null;
 let proxyByKey = new Map();
 let scene = null;
 
-// Auto-save debounce timer
 let autoSaveTimer = null;
 const AUTO_SAVE_DELAY = 600;
 
@@ -58,14 +57,8 @@ export async function setMode(next) {
     const toggleBtn = document.getElementById('modeToggleBtn');
     if (toggleBtn) toggleBtn.textContent = isEditor ? t('topActions.switchToLive') : t('topActions.switchToEditor');
 
-    // Editor mode disables auto-trigger firing and stops any running sequences so
-    // the user can edit without their changes being overwritten. Live mode resumes
-    // auto-triggers and fires `live_mode_entered` — sequences (looping or not) that
-    // want to (re)start on mode change can subscribe to it.
+    // Editor mode pauses auto-trigger firing so authoring doesn't get overwritten.
     setFiringAllowed(!isEditor);
-    if (!isEditor) {
-        fire('live_mode_entered', { reason: 'mode_switch_to_live' });
-    }
 }
 
 function detachGizmo() {
@@ -196,7 +189,6 @@ function wireGizmoTransforms() {
     });
 }
 
-// Update field values in-place — skips fields the user is currently editing.
 function setIfNotFocused(el, value) {
     if (!el) return;
     if (document.activeElement === el) return;
@@ -289,9 +281,6 @@ function buildHeader(panel) {
     header.querySelector('#saveAllBtn').onclick = () => saveEditorState();
 }
 
-// Export/Import buttons live in #topActions (scene.html), next to the mode toggle,
-// so they're accessible from both Live and Editor views. Wired up here because
-// importing needs to cancel the autosave timer scoped to this module.
 function wireTopActions() {
     const exportBtn = document.getElementById('exportBtn');
     const importBtn = document.getElementById('importBtn');
@@ -299,13 +288,11 @@ function wireTopActions() {
     const langBtn = document.getElementById('langToggleBtn');
     if (!exportBtn || !importBtn || !fileInput) return;
 
-    // Translate the static button text and tooltips into the current language.
     exportBtn.textContent = t('topActions.export');
     exportBtn.title = t('topActions.exportTitle');
     importBtn.textContent = t('topActions.import');
     importBtn.title = t('topActions.importTitle');
     if (langBtn) {
-        // Button text always shows the *other* language so the affordance is clear.
         langBtn.textContent = t('topActions.langToggle');
         langBtn.onclick = () => toggleLanguage();
     }
@@ -321,8 +308,6 @@ function wireTopActions() {
             return;
         }
         try {
-            // Cancel any pending auto-save so it can't clobber the imported file
-            // between the POST and the reload.
             clearTimeout(autoSaveTimer);
             await importSettings(file);
             location.reload();
@@ -389,9 +374,6 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     scene.add(transformControls);
     wireGizmoTransforms();
 
-    // Spawn helpers for any lights the registry already holds, and subscribe so
-    // future lights get helpers automatically. Initial visibility matches the
-    // mode setMode() will apply below.
     initLightHelpers(scene);
 
     const toggleBtn = document.getElementById('modeToggleBtn');
@@ -411,15 +393,12 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     renderWorldPanel();
     renderAnimationsPanel();
 
-    // Re-render panels ONLY when the row structure changes (add/remove).
-    // Update events would rebuild the DOM and steal focus from inputs the user is typing into.
+    // Re-render only on add/remove — update events would steal focus from inputs being typed into.
     registry.addEventListener('lights:add', () => renderLightsPanel());
     registry.addEventListener('lights:remove', () => renderLightsPanel());
     registry.addEventListener('slots:add', () => renderSlotsPanel());
     registry.addEventListener('slots:remove', () => renderSlotsPanel());
 
-    // For every change (including updates) refresh proxies, schedule save,
-    // and sync displayed values for any input that isn't currently focused.
     registry.addEventListener('change', (e) => {
         refreshSlotProxies();
         scheduleAutoSave();
@@ -433,9 +412,7 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
         if (selectedTargetId === `light:${e.detail.id}`) detachGizmo();
     });
 
-    // Sequencer changes trigger an auto-save. Re-render only when structure changes
-    // (add/remove) or when focus is outside the animations pane, so we don't yank
-    // focus from inputs the user is editing.
+    // Skip re-render when focus is inside the animations pane to avoid yanking it from inputs.
     const rerenderIfSafe = () => {
         const pane = document.querySelector('.tab-pane[data-tab="animations"]');
         if (!pane || !pane.contains(document.activeElement)) {
@@ -457,6 +434,5 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
         if (e.key === 'Escape') detachGizmo();
     });
 
-    // In DEV mode we open straight into editor mode (panel visible, sequences paused).
     await setMode('editor');
 }
