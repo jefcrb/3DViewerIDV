@@ -49,7 +49,7 @@ export async function setMode(next) {
     setHelpersVisible(isEditor);
     if (transformControls) {
         if (!isEditor) detachGizmo();
-        transformControls.visible = isEditor;
+        transformControls.visible = isEditor && !!selectedTargetId;
         transformControls.enabled = isEditor;
     }
     updateProxyVisibility();
@@ -65,6 +65,7 @@ export async function setMode(next) {
 function detachGizmo() {
     if (!transformControls) return;
     transformControls.detach();
+    transformControls.visible = false;
     selectedTargetId = null;
     updateProxyVisibility();
 }
@@ -80,6 +81,7 @@ export function selectTarget(key) {
     if (key === 'liveCamera') {
         transformControls.attach(liveCamera);
         transformControls.setMode('translate');
+        transformControls.visible = true;
         updateProxyVisibility();
         return;
     }
@@ -90,6 +92,7 @@ export function selectTarget(key) {
         if (light) {
             transformControls.attach(light);
             transformControls.setMode('translate');
+            transformControls.visible = true;
         }
         updateProxyVisibility();
         return;
@@ -101,6 +104,7 @@ export function selectTarget(key) {
         if (proxy) {
             transformControls.attach(proxy);
             transformControls.setMode('translate');
+            transformControls.visible = true;
         }
         updateProxyVisibility();
     }
