@@ -34,7 +34,7 @@
         "groundColor": "#444444",
         "intensity": 1,
         "position": [
-          -12.285220782941106,
+          -15.243463027736949,
           19.925426498111996,
           20.398204398204484
         ],
@@ -44,6 +44,26 @@
           0
         ],
         "castShadow": true,
+        "extras": {}
+      },
+      {
+        "id": "light_70bc5cad",
+        "name": "Hemisphere Light",
+        "type": "Hemisphere",
+        "color": "#ffffff",
+        "groundColor": "#07006b",
+        "intensity": 3,
+        "position": [
+          0,
+          24.131773745830827,
+          26.17521050750156
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "castShadow": false,
         "extras": {}
       }
     ],
@@ -151,7 +171,7 @@
     ],
     "liveCamera": {
       "position": [
-        0,
+        0.11715714285838608,
         6.359582641785355,
         51.57474067843777
       ],
@@ -163,7 +183,7 @@
       "fov": 50
     },
     "world": {
-      "backgroundColor": "#b7529e",
+      "backgroundColor": "#000000",
       "shadowsEnabled": true,
       "shadowMapType": "PCFSoft",
       "shadowMapSize": 1024,
@@ -177,7 +197,7 @@
     },
     "sequences": [
       {
-        "id": "seq_2371a2d1",
+        "id": "seq_b308cffd",
         "name": "sequence_1",
         "loop": false,
         "triggers": [
@@ -216,14 +236,14 @@
               "slots": {},
               "liveCamera": {
                 "position": [
-                  6.208880355764644,
-                  10.842475766656541,
-                  11.595104368848524
+                  0.11715714285838608,
+                  9.128360949352677,
+                  21.03765875483563
                 ],
                 "rotation": [
-                  -0.38120638146116514,
-                  0.4612551208781591,
-                  0.10550870929670524
+                  -0.06283185307179587,
+                  -0.005235987755982988,
+                  0
                 ],
                 "fov": 50
               }
@@ -238,87 +258,6 @@
               "liveCamera": {
                 "position": [
                   0.11715714285838608,
-                  6.359582641785355,
-                  51.57474067843777
-                ],
-                "rotation": [
-                  -0.06283185307179587,
-                  -0.005235987755982988,
-                  0
-                ],
-                "fov": 50
-              }
-            },
-            "easing": "cubicInOut"
-          }
-        ]
-      },
-      {
-        "id": "seq_410c4daf",
-        "name": "sequence_4",
-        "loop": true,
-        "triggers": [
-          "survivor_1_selected",
-          "survivor_3_selected"
-        ],
-        "stopTriggers": [
-          "survivor_2_selected",
-          "survivor_4_selected"
-        ],
-        "targets": [
-          "liveCamera"
-        ],
-        "keyframes": [
-          {
-            "t": 0,
-            "snapshot": {
-              "lights": {},
-              "slots": {},
-              "liveCamera": {
-                "position": [
-                  -14.525276460950778,
-                  6.359582641785355,
-                  51.57474067843777
-                ],
-                "rotation": [
-                  -0.06283185307179587,
-                  -0.005235987755982988,
-                  0
-                ],
-                "fov": 50
-              }
-            },
-            "easing": "cubicInOut"
-          },
-          {
-            "t": 3,
-            "snapshot": {
-              "lights": {},
-              "slots": {},
-              "liveCamera": {
-                "position": [
-                  16.78392581315111,
-                  6.359582641785355,
-                  51.57474067843777
-                ],
-                "rotation": [
-                  -0.06283185307179587,
-                  -0.005235987755982988,
-                  0
-                ],
-                "fov": 50
-              }
-            },
-            "easing": "cubicInOut"
-          },
-          {
-            "t": 6,
-            "snapshot": {
-              "lights": {},
-              "slots": {},
-              "liveCamera": {
-                "position": [
-                  -14.525276460950778,
                   6.359582641785355,
                   51.57474067843777
                 ],
