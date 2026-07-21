@@ -118,6 +118,13 @@ const translations = {
         'common.position': 'Position',
         'common.rotation': 'Rotation',
         'common.scale': 'Scale',
+
+        // === feedback tab (dev only) ===
+        'feedback.summary': 'Problem or suggestion?',
+        'feedback.discord': 'Discord:',
+        'feedback.copyTitle': 'Click to copy',
+        'feedback.copied': 'copied',
+        'feedback.github': 'GitHub issues →',
     },
 
     zh: {
@@ -234,6 +241,13 @@ const translations = {
         'common.position': '位置',
         'common.rotation': '旋转',
         'common.scale': '缩放',
+
+        // === feedback tab (dev only) ===
+        'feedback.summary': '有问题或建议？',
+        'feedback.discord': 'Discord：',
+        'feedback.copyTitle': '点击复制',
+        'feedback.copied': '已复制',
+        'feedback.github': 'GitHub 问题 →',
     }
 };
 
