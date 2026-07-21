@@ -38,7 +38,7 @@ function fireDiffEvents(jsonData) {
     if (newHunterKey !== lastHunterKey) {
         if (newHunterKey === null) {
             fire('hunter_deselected', {});
-        } else {
+        } else if (lastHunterKey === null) {
             fire('hunter_selected', { name: jsonData.hunter?.name });
         }
     }

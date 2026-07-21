@@ -77,6 +77,7 @@ const translations = {
         'world.toneMapping': 'Tone mapping',
         'world.toneMode': 'Mode',
         'world.exposure': 'Exposure',
+        'world.perfHint': 'Tip: press <kbd>P</kbd> to toggle the performance monitor.',
 
         // === animations panel ===
         'animations.experimental': '<strong>Experimental:</strong> this feature is still in development and may misbehave or change between updates.',
@@ -117,6 +118,13 @@ const translations = {
         'common.position': 'Position',
         'common.rotation': 'Rotation',
         'common.scale': 'Scale',
+
+        // === feedback tab (dev only) ===
+        'feedback.summary': 'Problem or suggestion?',
+        'feedback.discord': 'Discord:',
+        'feedback.copyTitle': 'Click to copy',
+        'feedback.copied': 'copied',
+        'feedback.github': 'GitHub issues →',
     },
 
     zh: {
@@ -192,6 +200,7 @@ const translations = {
         'world.toneMapping': '色调映射',
         'world.toneMode': '模式',
         'world.exposure': '曝光',
+        'world.perfHint': '提示：按 <kbd>P</kbd> 切换性能监视器。',
 
         // === animations panel ===
         'animations.experimental': '<strong>实验性功能：</strong> 此功能仍在开发中，可能会出现问题或在更新中发生变化。',
@@ -232,6 +241,13 @@ const translations = {
         'common.position': '位置',
         'common.rotation': '旋转',
         'common.scale': '缩放',
+
+        // === feedback tab (dev only) ===
+        'feedback.summary': '有问题或建议？',
+        'feedback.discord': 'Discord：',
+        'feedback.copyTitle': '点击复制',
+        'feedback.copied': '已复制',
+        'feedback.github': 'GitHub 问题 →',
     }
 };
 

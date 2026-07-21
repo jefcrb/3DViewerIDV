@@ -21,6 +21,8 @@ import { setupCharacterAPI, fireSceneLoaded } from './characters/api.js';
 import { loadSettings } from './storage/settingsStorage.js';
 import { registry } from './editor/registry.js';
 import { sequencer } from './animation/sequencer.js';
+import { initPerfMonitor, updatePerfMonitor } from './perf/statsMonitor.js';
+import { t } from './i18n.js';
 
 const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
@@ -65,19 +67,22 @@ function animate(currentTime) {
     }
 
     renderer.render(scene, getCurrentCamera());
+
+    updatePerfMonitor();
 }
 
 (async function() {
     try {
         const settings = await loadSettings();
-        // rendererType is ignored: WebGPU is broken on many configs; force webgl.
+        initPerfMonitor();
+        // rendererType is ignored; force webgl
         renderer = await setupRenderer(canvas, 'webgl');
         scene = setupScene(renderer);
         liveCamera = setupLiveCamera();
         editorCamera = setupEditorCamera();
         editorControls = setupEditorControls(editorCamera, canvas);
         cameraHelper = createLiveCameraHelper(liveCamera);
-        // TransformControls needs its target in the scene graph.
+        // TransformControls needs its target in the scene graph
         scene.add(liveCamera);
         scene.add(cameraHelper);
 
@@ -136,6 +141,7 @@ function animate(currentTime) {
             });
             window.__editor = editorMod;
             document.getElementById('topActions').style.display = 'flex';
+            setupFeedbackTab();
         }
 
         preloadAllModels().catch(err => {
@@ -158,3 +164,32 @@ function animate(currentTime) {
         document.getElementById('errorMessage').textContent = `Fatal error: ${error.message}`;
     }
 })();
+
+function setupFeedbackTab() {
+    const tab = document.getElementById('feedbackTab');
+    if (!tab) return;
+
+    document.getElementById('feedbackSummary').textContent = t('feedback.summary');
+    document.getElementById('feedbackDiscordLabel').textContent = t('feedback.discord');
+    document.getElementById('feedbackGithubLink').textContent = t('feedback.github');
+
+    const userCode = document.getElementById('feedbackDiscordUser');
+    userCode.title = t('feedback.copyTitle');
+
+    const copied = document.getElementById('feedbackCopied');
+    copied.textContent = t('feedback.copied');
+
+    let copiedTimeout = null;
+    userCode.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(userCode.textContent);
+            copied.classList.add('show');
+            clearTimeout(copiedTimeout);
+            copiedTimeout = setTimeout(() => copied.classList.remove('show'), 1500);
+        } catch (err) {
+            console.warn('Clipboard write failed:', err);
+        }
+    });
+
+    tab.style.display = 'block';
+}

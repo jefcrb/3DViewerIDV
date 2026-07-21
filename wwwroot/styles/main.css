@@ -971,3 +971,69 @@ html, body {
 .kf-row.just-recorded > .kf-head {
     animation: kfPulse 0.9s ease-out;
 }
+
+/* Dev-only feedback tab (bottom-left). */
+#feedbackTab {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    background: #2c2c2c;
+    border: 1px solid #1e1e1e;
+    border-radius: 8px;
+    color: #e5e5e5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    font-size: 11px;
+    padding: 6px 10px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
+    z-index: 50;
+    max-width: 240px;
+    user-select: none;
+}
+#feedbackTab .feedback-summary {
+    font-weight: 500;
+    color: #cfcfcf;
+}
+#feedbackTab .feedback-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid #1e1e1e;
+}
+#feedbackTab .feedback-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+#feedbackTab .feedback-label {
+    color: #9a9a9a;
+}
+#feedbackTab code {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    background: #1e1e1e;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #e5e5e5;
+    cursor: pointer;
+    user-select: text;
+}
+#feedbackTab code:hover {
+    background: #262626;
+}
+#feedbackTab .feedback-copied {
+    color: #7dd87d;
+    font-size: 10px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+#feedbackTab .feedback-copied.show {
+    opacity: 1;
+}
+#feedbackTab .feedback-github {
+    color: #7cc4ff;
+    text-decoration: none;
+}
+#feedbackTab .feedback-github:hover {
+    text-decoration: underline;
+}
