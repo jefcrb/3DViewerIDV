@@ -203,6 +203,12 @@
       "name": "梅莉·普林尼",
       "zy": "“女王蜂”",
       "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/nvfengwang/spkunc_idle.gltf"
+    },
+    {
+      "id": 35,
+      "name": "芬森·亨特",
+      "zy": "“牙医”",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/yayi/yy.gltf"
     }
   ],
   "survivors": [
