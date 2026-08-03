@@ -30,6 +30,7 @@ import { setupCharacterAPI, fireSceneLoaded } from './characters/api.js';
 import { loadSettings } from './storage/settingsStorage.js';
 import { registry } from './editor/registry.js';
 import { sequencer } from './animation/sequencer.js';
+import { clipManager } from './animation/clips.js';
 import { initPerfMonitor, updatePerfMonitor } from './perf/statsMonitor.js';
 import { t } from './i18n.js';
 
@@ -66,6 +67,7 @@ function animate(currentTime) {
     });
 
     sequencer.update(currentTime / 1000);
+    clipManager.update(delta);
 
     if (editorControls && editorControls.enabled) {
         editorControls.update();
@@ -134,6 +136,11 @@ function animate(currentTime) {
 
         if (Array.isArray(settings?.editor?.sequences)) {
             sequencer.hydrate(settings.editor.sequences);
+        }
+
+        clipManager.init(sceneState.gltfRoot, sceneState.gltfAnimations);
+        if (settings?.editor?.clips) {
+            clipManager.hydrate(settings.editor.clips);
         }
 
         if (DEV) {

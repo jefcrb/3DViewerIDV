@@ -16,7 +16,10 @@ export const state = {
         hunter: null,
         survivors: []
     },
-    sceneLoaded: false
+    sceneLoaded: false,
+    // Populated when the .glb ships with baked animations. Consumed by animation/clips.js.
+    gltfRoot: null,
+    gltfAnimations: []
 };
 
 function cloneTransform(t) {
@@ -171,6 +174,12 @@ export function loadBlenderScene(scene, liveCamera) {
                 state.dummyTransforms = getTransformsFromDummies(state.dummyModels);
                 state.characterPositions = cloneTransforms(state.dummyTransforms);
                 hideDummyModels(state.dummyModels);
+
+                state.gltfRoot = gltf.scene;
+                state.gltfAnimations = Array.isArray(gltf.animations) ? gltf.animations : [];
+                if (state.gltfAnimations.length > 0) {
+                    console.log(`Scene ships with ${state.gltfAnimations.length} built-in animation clip(s)`);
+                }
 
                 state.sceneLoaded = true;
                 resolve();
