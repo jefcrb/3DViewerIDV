@@ -1,4 +1,5 @@
 {
   "WebServerPort": 9090,
-  "DefaultSceneId": "default"
+  "DefaultSceneId": "default",
+  "AutoStartServer": true
 }

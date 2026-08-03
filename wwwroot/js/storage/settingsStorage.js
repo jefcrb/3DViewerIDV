@@ -1,5 +1,6 @@
 import { SCENE_ID } from '../config.js';
 
+const SETTINGS_FILE = `./scenes/${encodeURIComponent(SCENE_ID)}/settings.json`;
 const SETTINGS_API = `./api/settings?scene=${encodeURIComponent(SCENE_ID)}`;
 let lastLoaded = null;
 
@@ -77,7 +78,7 @@ export function migrate(settings) {
 
 export async function loadSettings() {
     try {
-        const response = await fetch(SETTINGS_API + '&t=' + Date.now());
+        const response = await fetch(SETTINGS_FILE + '?t=' + Date.now());
 
         if (response.ok) {
             const settings = await response.json();
