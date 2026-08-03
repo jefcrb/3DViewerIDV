@@ -29,6 +29,21 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 function lerpVec3(a, b, t) {
     return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 }
+
+// Slerp two Euler XYZ triples via quaternions. Component-wise lerp of Euler angles
+// causes flips whenever adjacent keyframes cross the ±π wraparound (e.g. z: 3.13 → -3.04
+// visually a tiny nudge, but linearly interpolated sends the camera through 0). Quaternion
+// slerp always takes the shortest arc regardless of Euler representation.
+const _qA = new THREE.Quaternion();
+const _qB = new THREE.Quaternion();
+const _eTmp = new THREE.Euler();
+function slerpEulerXYZ(a, b, t) {
+    _qA.setFromEuler(_eTmp.set(a[0], a[1], a[2], 'XYZ'));
+    _qB.setFromEuler(_eTmp.set(b[0], b[1], b[2], 'XYZ'));
+    _qA.slerp(_qB, t);
+    _eTmp.setFromQuaternion(_qA, 'XYZ');
+    return [_eTmp.x, _eTmp.y, _eTmp.z];
+}
 function lerpHexColor(a, b, t) {
     const ca = hexToInt(a), cb = hexToInt(b);
     const r = lerp((ca >> 16) & 0xff, (cb >> 16) & 0xff, t);
@@ -137,14 +152,14 @@ function interpolateSnapshot(a, b, t) {
         if (!b.slots[id]) continue;
         out.slots[id] = {
             position: lerpVec3(a.slots[id].position, b.slots[id].position, t),
-            rotation: lerpVec3(a.slots[id].rotation, b.slots[id].rotation, t),
+            rotation: slerpEulerXYZ(a.slots[id].rotation, b.slots[id].rotation, t),
             scale: lerpVec3(a.slots[id].scale, b.slots[id].scale, t)
         };
     }
     if (a.liveCamera && b.liveCamera) {
         out.liveCamera = {
             position: lerpVec3(a.liveCamera.position, b.liveCamera.position, t),
-            rotation: lerpVec3(
+            rotation: slerpEulerXYZ(
                 a.liveCamera.rotation || [0, 0, 0],
                 b.liveCamera.rotation || [0, 0, 0],
                 t
