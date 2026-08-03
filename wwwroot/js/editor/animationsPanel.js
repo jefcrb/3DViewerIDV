@@ -1,5 +1,6 @@
 import { sequencer, EASING_NAMES, availableTargets, captureSnapshot } from '../animation/sequencer.js';
-import { listKnownEvents, playSequence, stopSequence } from '../animation/triggers.js';
+import { clipManager } from '../animation/clips.js';
+import { listKnownEvents, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
 import { registry, intToHex } from './registry.js';
 import { selectTarget } from './editorMode.js';
 import { showPath, hidePath } from './pathPreview.js';
@@ -10,6 +11,7 @@ const DEG2RAD = Math.PI / 180;
 
 const expandedKeyframes = new Set();        // `${seqId}@${t}`
 const expandedSequences = new Set();        // seq ids currently expanded
+const expandedClips = new Set();            // clip names currently expanded
 
 // Captured on first keyframe-expand in a sequence; restored on deselect so previews are reversible.
 const previewAnchors = new Map();           // seqId -> snapshot
@@ -674,6 +676,151 @@ function sequenceRow(spec) {
     return row;
 }
 
+const ICON_CLIP = '🎞';
+
+function clipTriggerPills(kind, current, events) {
+    return events.map(e => `
+        <label class="trigger-pill">
+            <input type="checkbox" data-kind="${kind}" value="${e}" ${current.includes(e) ? 'checked' : ''}>
+            ${e}
+        </label>
+    `).join('');
+}
+
+function clipRow(clip) {
+    const row = document.createElement('div');
+    const isExpanded = expandedClips.has(clip.name);
+    row.className = 'editor-row seq-row' + (isExpanded ? ' open' : '');
+    row.dataset.clip = clip.name;
+
+    const events = listKnownEvents();
+    const cfg = clip.config;
+    const playing = clipManager.isPlaying(clip.name);
+
+    const pillsHtml = (list) => list.length === 0
+        ? `<span class="muted">${t('animations.none')}</span>`
+        : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
+
+    // Head layout mirrors seq-row so the two sections read consistently.
+    row.innerHTML = `
+        <div class="row-head">
+            <span class="name-input" style="flex:1;padding:3px 6px;font-size:11px;color:#fff;">
+                ${ICON_CLIP} ${clip.name}
+            </span>
+            <span class="seq-duration muted">${clip.duration.toFixed(2)}s</span>
+            <button class="play-btn" title="${playing ? t('clips.stopTitle') : t('clips.playTitle')}">${playing ? '■' : '▶'}</button>
+        </div>
+        ${isExpanded ? `
+        <div class="row-body">
+            <label class="loop-row">
+                <input type="checkbox" class="loop-toggle" ${cfg.loop ? 'checked' : ''}>
+                ${t('clips.loop')}
+            </label>
+
+            <label>${t('clips.speed')}
+                <input type="number" class="speed-input" step="0.1" min="0.05" value="${(cfg.speed ?? 1.0).toFixed(2)}">
+            </label>
+
+            <label>${cfg.loop ? t('clips.startTriggers') : t('clips.triggers')}</label>
+            <div class="trigger-list" data-kind="triggers">
+                ${clipTriggerPills('triggers', cfg.triggers || [], events)}
+            </div>
+
+            ${cfg.loop ? `
+            <label>${t('clips.stopTriggers')}</label>
+            <div class="trigger-list" data-kind="stopTriggers">
+                ${clipTriggerPills('stopTriggers', cfg.stopTriggers || [], events)}
+            </div>` : ''}
+        </div>`
+        : `
+        <div class="seq-summary">
+            <div class="seq-trigger-line">
+                <span class="seq-trigger-label">${(cfg.loop ? t('animations.start') : t('animations.on'))}:</span>
+                ${pillsHtml(cfg.triggers || [])}
+                ${cfg.loop ? ` <span class="seq-loop-tag">${t('animations.loopTag')}</span>` : ''}
+            </div>
+            ${cfg.loop && (cfg.stopTriggers || []).length > 0 ? `
+            <div class="seq-trigger-line">
+                <span class="seq-trigger-label">${t('animations.stop')}:</span>
+                ${pillsHtml(cfg.stopTriggers)}
+            </div>` : ''}
+        </div>`}
+    `;
+
+    if (isExpanded) {
+        row.querySelector('.row-head').onclick = (e) => {
+            if (e.target.closest('input, button')) return;
+            expandedClips.delete(clip.name);
+            renderAnimationsPanel();
+        };
+    } else {
+        row.onclick = (e) => {
+            if (e.target.closest('input, button')) return;
+            expandedClips.add(clip.name);
+            renderAnimationsPanel();
+        };
+    }
+
+    row.querySelector('.play-btn').onclick = () => {
+        if (clipManager.isPlaying(clip.name)) {
+            stopClip(clip.name);
+        } else {
+            playClip(clip.name);
+        }
+        renderAnimationsPanel();
+    };
+
+    if (!isExpanded) return row;
+
+    // Toggling loop rehsapes the UI (shows/hides stop-triggers list).
+    row.querySelector('.loop-toggle').onchange = (e) => {
+        clipManager.updateConfig(clip.name, { loop: e.target.checked });
+        renderAnimationsPanel();
+    };
+
+    row.querySelector('.speed-input').oninput = (e) => {
+        const raw = parseFloat(e.target.value);
+        if (Number.isNaN(raw) || raw <= 0) return;
+        clipManager.updateConfig(clip.name, { speed: raw });
+    };
+
+    row.querySelectorAll('.trigger-list input[type="checkbox"]').forEach(cb => {
+        cb.onchange = () => {
+            const kind = cb.dataset.kind;
+            const checked = Array.from(
+                row.querySelectorAll(`.trigger-list input[type="checkbox"][data-kind="${kind}"]:checked`)
+            ).map(el => el.value);
+            clipManager.updateConfig(clip.name, { [kind]: checked });
+        };
+    });
+
+    return row;
+}
+
+function renderClipsSection(pane) {
+    const clips = clipManager.listClips();
+
+    const heading = document.createElement('div');
+    heading.className = 'editor-section-heading';
+    heading.textContent = t('clips.sectionTitle');
+    heading.style.cssText = 'margin-top:12px;margin-bottom:6px;color:#b3b3b3;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;';
+    pane.appendChild(heading);
+
+    if (clips.length === 0) {
+        const note = document.createElement('div');
+        note.className = 'editor-note';
+        note.style.cssText = 'font-size:11px;color:#8a8a8a;';
+        note.textContent = t('clips.none');
+        pane.appendChild(note);
+        return;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'editor-list';
+    clips.forEach(clip => list.appendChild(clipRow(clip)));
+    pane.appendChild(list);
+}
+
 export function renderAnimationsPanel() {
     const pane = document.querySelector('.tab-pane[data-tab="animations"]');
     if (!pane) return;
@@ -712,6 +859,9 @@ export function renderAnimationsPanel() {
     };
     addBar.querySelector('#stopAllBtn').onclick = () => {
         sequencer.stopAll();
+        clipManager.stopAll();
         renderAnimationsPanel();
     };
+
+    renderClipsSection(pane);
 }

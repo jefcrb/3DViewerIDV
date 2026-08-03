@@ -1,7 +1,18 @@
 import * as THREE from 'three';
 
+function getSceneId() {
+    const p = new URLSearchParams(window.location.search).get('scene');
+    if (!p || !/^[A-Za-z0-9._-]{1,64}$/.test(p)) return 'scene1';
+    // Alias: earlier dev builds used 'default' as the built-in id; treat as scene1.
+    if (p === 'default') return 'scene1';
+    return p;
+}
+
+export const SCENE_ID = getSceneId();
+export const SCENE_DISPLAY_NAME = SCENE_ID;
+
 export const SCENE_CONFIG = {
-    sceneUrl: './assets/scene.glb',
+    sceneUrl: `./scenes/${SCENE_ID}/scene.glb`,
     dummyNames: {
         hunter: '_HUNTER',
         survivors: ['_SURVIVOR_1', '_SURVIVOR_2', '_SURVIVOR_3', '_SURVIVOR_4']

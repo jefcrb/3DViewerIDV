@@ -114,6 +114,19 @@ const translations = {
         'animations.deleteSeq': 'Delete this sequence',
         'animations.loopTag': 'loop',
 
+        // === built-in glTF clips section ===
+        'clips.sectionTitle': 'Built-in clips',
+        'clips.none': 'This scene\'s .glb has no baked animations.',
+        'clips.duration': 'Duration',
+        'clips.speed': 'Speed',
+        'clips.loop': 'Loop',
+        'clips.triggers': 'Start triggers:',
+        'clips.startTriggers': 'Start triggers:',
+        'clips.stopTriggers': 'Stop triggers:',
+        'clips.playTitle': 'Play clip',
+        'clips.stopTitle': 'Stop clip',
+        'clips.noTriggers': 'no triggers',
+
         // === common ===
         'common.position': 'Position',
         'common.rotation': 'Rotation',
@@ -236,6 +249,19 @@ const translations = {
         'animations.duplicateSeq': '复制此动画',
         'animations.deleteSeq': '删除此动画',
         'animations.loopTag': '循环',
+
+        // === built-in glTF clips section ===
+        'clips.sectionTitle': '内置动画片段',
+        'clips.none': '当前场景的 .glb 文件不包含内置动画。',
+        'clips.duration': '时长',
+        'clips.speed': '速度',
+        'clips.loop': '循环',
+        'clips.triggers': '启动触发器：',
+        'clips.startTriggers': '启动触发器：',
+        'clips.stopTriggers': '停止触发器：',
+        'clips.playTitle': '播放片段',
+        'clips.stopTitle': '停止片段',
+        'clips.noTriggers': '无触发器',
 
         // === common ===
         'common.position': '位置',

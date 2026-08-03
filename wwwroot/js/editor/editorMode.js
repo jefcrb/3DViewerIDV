@@ -8,6 +8,7 @@ import { renderAnimationsPanel } from './animationsPanel.js';
 import { renderWorldPanel } from './worldPanel.js';
 import { saveSettings, exportSettings, importSettings } from '../storage/settingsStorage.js';
 import { sequencer } from '../animation/sequencer.js';
+import { clipManager } from '../animation/clips.js';
 import { setFiringAllowed } from '../animation/triggers.js';
 import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
 import { t, toggleLanguage } from '../i18n.js';
@@ -358,7 +359,8 @@ function buildTabs(panel) {
 async function saveEditorState(opts = {}) {
     const editor = {
         ...registry.serialize(),
-        sequences: sequencer.serialize()
+        sequences: sequencer.serialize(),
+        clips: clipManager.serialize()
     };
     await saveSettings({ editor });
     if (!opts.silent) console.log('Editor state saved');
@@ -428,6 +430,10 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     sequencer.addEventListener('seq:update', () => { rerenderIfSafe(); scheduleAutoSave(); });
     sequencer.addEventListener('seq:play', () => rerenderIfSafe());
     sequencer.addEventListener('seq:stop', () => rerenderIfSafe());
+
+    clipManager.addEventListener('clip:update', () => { rerenderIfSafe(); scheduleAutoSave(); });
+    clipManager.addEventListener('clip:play', () => rerenderIfSafe());
+    clipManager.addEventListener('clip:stop', () => rerenderIfSafe());
 
     window.addEventListener('keydown', (e) => {
         if (mode !== 'editor') return;

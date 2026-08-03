@@ -1,4 +1,5 @@
 import { sequencer } from './sequencer.js';
+import { clipManager } from './clips.js';
 
 const bus = new EventTarget();
 
@@ -22,7 +23,10 @@ let firingAllowed = true;
 
 export function setFiringAllowed(allowed) {
     firingAllowed = allowed;
-    if (!allowed) sequencer.stopAll();
+    if (!allowed) {
+        sequencer.stopAll();
+        clipManager.stopAll();
+    }
 }
 
 export function isFiringAllowed() {
@@ -33,6 +37,12 @@ export function listKnownEvents() {
     const userEvents = new Set();
     for (const seq of sequencer.listSequences()) {
         const both = [...(seq.triggers || []), ...(seq.stopTriggers || [])];
+        for (const e of both) {
+            if (!STANDARD_EVENTS.includes(e)) userEvents.add(e);
+        }
+    }
+    for (const clip of clipManager.listClips()) {
+        const both = [...(clip.config.triggers || []), ...(clip.config.stopTriggers || [])];
         for (const e of both) {
             if (!STANDARD_EVENTS.includes(e)) userEvents.add(e);
         }
@@ -55,6 +65,16 @@ export function fire(eventName, detail = {}) {
             sequencer.stop(seq.id);
         }
     }
+
+    for (const clip of clipManager.listClips()) {
+        const cfg = clip.config;
+        if (Array.isArray(cfg.triggers) && cfg.triggers.includes(eventName)) {
+            clipManager.play(clip.name);
+        }
+        if (cfg.loop && Array.isArray(cfg.stopTriggers) && cfg.stopTriggers.includes(eventName)) {
+            clipManager.stop(clip.name);
+        }
+    }
 }
 
 // Bypasses firingAllowed so the Animations panel's Play button works in editor mode.
@@ -64,6 +84,14 @@ export function playSequence(id, opts) {
 
 export function stopSequence(id) {
     sequencer.stop(id);
+}
+
+export function playClip(name) {
+    clipManager.play(name);
+}
+
+export function stopClip(name) {
+    clipManager.stop(name);
 }
 
 export function on(eventName, handler) {

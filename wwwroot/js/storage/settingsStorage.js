@@ -1,4 +1,7 @@
-const SETTINGS_FILE = './viewer_settings.json';
+import { SCENE_ID } from '../config.js';
+
+const SETTINGS_FILE = `./scenes/${encodeURIComponent(SCENE_ID)}/settings.json`;
+const SETTINGS_API = `./api/settings?scene=${encodeURIComponent(SCENE_ID)}`;
 let lastLoaded = null;
 
 function legacyToLightSpecs(legacy) {
@@ -80,10 +83,10 @@ export async function loadSettings() {
         if (response.ok) {
             const settings = await response.json();
             lastLoaded = settings;
-            console.log('Settings loaded from viewer_settings.json');
+            console.log(`Settings loaded for scene '${SCENE_ID}'`);
             return migrate(settings);
         } else if (response.status === 404) {
-            console.log('No settings file found, using defaults');
+            console.log(`No settings for scene '${SCENE_ID}', using defaults`);
             lastLoaded = null;
             return null;
         } else {
@@ -104,7 +107,7 @@ export async function saveSettings(patch) {
     const json = JSON.stringify(merged, null, 2);
 
     try {
-        const response = await fetch('./api/settings', {
+        const response = await fetch(SETTINGS_API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: json
@@ -134,7 +137,7 @@ export function exportSettings() {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `viewer_settings_${stamp}.json`;
+    a.download = `viewer_settings_${SCENE_ID}_${stamp}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -166,9 +169,10 @@ export async function importSettings(file) {
 }
 
 export function getStorageInfo() {
-    console.log('Settings file: viewer_settings.json (in wwwroot)');
+    console.log(`Settings API: ${SETTINGS_API}`);
     return {
-        storageMethod: 'Static file in wwwroot',
-        settingsFile: SETTINGS_FILE
+        storageMethod: 'Per-scene API endpoint',
+        settingsFile: SETTINGS_API,
+        sceneId: SCENE_ID
     };
 }
