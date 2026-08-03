@@ -972,10 +972,10 @@ html, body {
     animation: kfPulse 0.9s ease-out;
 }
 
-/* Dev-only feedback tab (bottom-left). */
+/* Dev-only feedback tab (bottom-right). */
 #feedbackTab {
     position: fixed;
-    left: 12px;
+    right: 12px;
     bottom: 12px;
     background: #2c2c2c;
     border: 1px solid #1e1e1e;
