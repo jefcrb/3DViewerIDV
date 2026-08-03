@@ -1,3 +1,4 @@
 {
-  "WebServerPort": 9090
+  "WebServerPort": 9090,
+  "DefaultSceneId": "default"
 }

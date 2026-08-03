@@ -1,5 +1,14 @@
 import * as THREE from 'three';
-import { DEV, DEV_DATA } from './config.js';
+import { DEV, DEV_DATA, SCENE_DISPLAY_NAME } from './config.js';
+
+// Tab title = scene name only, so multi-scene work is easy to navigate.
+document.title = SCENE_DISPLAY_NAME;
+
+// Favicon distinguishes live vs dev pages at a glance in the tab bar.
+const faviconLink = document.getElementById('faviconLink');
+if (faviconLink) {
+    faviconLink.href = DEV ? './assets/favicon-dev.svg' : './assets/favicon-live.svg';
+}
 import {
     setupRenderer,
     setupScene,

@@ -3,6 +3,8 @@ plan/
 *comparison*
 wwwroot/assets/scene.glb
 wwwroot/viewer_settings.json
+wwwroot/keyframe_animations.json
+wwwroot/scenes/
 
 wwwroot/hunters/*
 !wwwroot/hunters/character_list.json
