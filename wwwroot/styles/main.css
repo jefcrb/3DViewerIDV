@@ -6,8 +6,19 @@ html, body {
     overflow: hidden;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
 }
+
 html.transparent-bg, html.transparent-bg body {
     background: transparent;
+}
+html.transparent-bg-editor, html.transparent-bg-editor body {
+    background-color: #1e1e1e;
+    background-image:
+        linear-gradient(45deg, #242424 25%, transparent 25%),
+        linear-gradient(-45deg, #242424 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #242424 75%),
+        linear-gradient(-45deg, transparent 75%, #242424 75%);
+    background-size: 60px 60px;
+    background-position: 0 0, 0 30px, 30px -30px, 30px 0;
 }
 
 #renderCanvas {
@@ -366,10 +377,17 @@ html.transparent-bg, html.transparent-bg body {
 .editor-header h3 {
     margin: 0;
     color: #b3b3b3;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+.editor-header-version {
+    color: #7a7a7a;
+    font-size: 10px;
+    font-weight: 400;
 }
 .editor-actions {
     display: flex;
@@ -571,6 +589,13 @@ html.transparent-bg, html.transparent-bg body {
     text-align: right;
 }
 
+.skybox-color-row {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
 .skybox-image {
     display: flex;
     flex-direction: column;
@@ -597,6 +622,7 @@ html.transparent-bg, html.transparent-bg body {
     font-size: 10px;
     line-height: 1.4;
 }
+
 
 .add-bar {
     display: flex;

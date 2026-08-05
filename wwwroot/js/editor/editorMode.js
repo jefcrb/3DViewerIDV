@@ -12,6 +12,7 @@ import { clipManager } from '../animation/clips.js';
 import { setFiringAllowed } from '../animation/triggers.js';
 import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
 import { t, toggleLanguage } from '../i18n.js';
+import { PLUGIN_VERSION } from '../config.js';
 
 let mode = 'live';
 let editorCamera = null;
@@ -268,7 +269,7 @@ function buildHeader(panel) {
     const header = document.createElement('div');
     header.className = 'editor-header';
     header.innerHTML = `
-        <h3>${t('header.title')}</h3>
+        <h3>${t('header.title')}<span class="editor-header-version">v${PLUGIN_VERSION}</span></h3>
         <div class="editor-actions">
             <button id="gizmoTranslate" class="gizmo-btn" title="${t('header.translateTitle')}">✥</button>
             <button id="gizmoRotate" class="gizmo-btn" title="${t('header.rotateTitle')}">↻</button>

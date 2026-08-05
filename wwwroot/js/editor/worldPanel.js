@@ -13,6 +13,7 @@ function readFileAsDataURL(file) {
     });
 }
 
+
 export function renderWorldPanel() {
     const pane = document.querySelector('.tab-pane[data-tab="world"]');
     if (!pane) return;
@@ -24,10 +25,12 @@ export function renderWorldPanel() {
         <div class="editor-row">
             <div class="row-head"><strong>${t('world.skybox')}</strong></div>
             <div class="row-body">
-                <label><input type="checkbox" id="worldTransparentBg" ${transparent ? 'checked' : ''}> ${t('world.transparent')}</label>
-                <label>${t('world.skyboxColor')}
-                    <input type="color" id="worldBgColor" value="${w.backgroundColor}" ${(hasImage || transparent) ? 'disabled' : ''}>
-                </label>
+                <div class="skybox-color-row">
+                    <label>${t('world.skyboxColor')}
+                        <input type="color" id="worldBgColor" value="${w.backgroundColor}" ${(hasImage || transparent) ? 'disabled' : ''}>
+                    </label>
+                    <label><input type="checkbox" id="worldTransparentBg" ${transparent ? 'checked' : ''}> ${t('world.transparent')}</label>
+                </div>
                 <div class="skybox-image">
                     <div class="skybox-image-actions">
                         <button type="button" class="btn" id="worldSkyboxUpload" ${disAttr}>${hasImage ? t('world.replaceImage') : t('world.uploadImage')}</button>

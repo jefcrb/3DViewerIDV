@@ -39,6 +39,9 @@ function getDevMode() {
 
 export const DEV = getDevMode();
 
+// Bump alongside manifest.yml on release. Rendered in the editor header.
+export const PLUGIN_VERSION = '0.09.0';
+
 export const AVAILABLE_HUNTERS = [
     { name: "Hell Ember", folder: "厂长" },
     { name: "Ripper", folder: "杰克" },

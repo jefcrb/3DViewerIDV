@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DEV } from '../config.js';
 
 // Single source of truth for editable scene objects. Mutations emit change events.
 
@@ -46,8 +47,13 @@ export const TONE_MAPPING_TYPES = {
 
 const WORLD_DEFAULTS = {
     backgroundColor: '#1a1a2e',
+    // Optional user-uploaded panorama as a data URL. When set, replaces backgroundColor
+    // as the scene background.
     skyboxImage: null,
+    // 'Equirectangular' wraps a 2:1 panorama around the scene; 'UV' flat-maps the image.
     skyboxMapping: 'Equirectangular',
+    // When true, both color and image are ignored; scene.background = null so the
+    // canvas renders transparent (for OBS browser sources).
     transparentBackground: false,
     shadowsEnabled: true,
     shadowMapType: 'PCFSoft',
@@ -458,9 +464,11 @@ class Registry extends EventTarget {
     }
 
     _applyWorldSpec() {
-        // Otherwise the body's gradient leaks through the transparent canvas in OBS.
+        // Editor gets a checkerboard so transparency is legible; OBS/browser stays truly transparent.
         if (typeof document !== 'undefined') {
-            document.documentElement.classList.toggle('transparent-bg', !!this.world.transparentBackground);
+            const on = !!this.world.transparentBackground;
+            document.documentElement.classList.toggle('transparent-bg', on && !DEV);
+            document.documentElement.classList.toggle('transparent-bg-editor', on && DEV);
         }
         if (this.scene) {
             if (this.world.transparentBackground) {
@@ -518,6 +526,9 @@ class Registry extends EventTarget {
         }
     }
 
+    // Loads the data URL as a texture and sets it as scene.background. Mapping is read
+    // from world.skyboxMapping. Mapping-only changes reuse the cached texture in-place.
+    // GIFs go through a CanvasTexture path that snapshots the animated <img> each frame.
     _applySkyboxImage(dataUrl) {
         const desiredMapping = SKYBOX_MAPPINGS[this.world.skyboxMapping] ?? THREE.EquirectangularReflectionMapping;
         if (this._skyboxTexture && this._skyboxTextureSource === dataUrl) {
@@ -543,6 +554,7 @@ class Registry extends EventTarget {
                 if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
                     tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
                 }
+                // Race: if the user cleared/replaced the image while this was loading, drop it.
                 if (this.world.skyboxImage !== dataUrl) { tex.dispose(); return; }
                 this._disposeSkyboxTexture();
                 this._skyboxTexture = tex;
@@ -554,7 +566,8 @@ class Registry extends EventTarget {
         );
     }
 
-    // Browsers animate GIFs in <img>; snapshot to canvas each frame so CanvasTexture picks it up.
+    // Browsers animate GIFs on the <img> element itself; we redraw it to a canvas
+    // per frame and let CanvasTexture pick up the change.
     _applyGifSkybox(dataUrl, mapping) {
         const img = document.createElement('img');
         img.onload = () => {

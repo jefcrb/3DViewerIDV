@@ -15,7 +15,7 @@ const translations = {
         'topActions.langToggle': '中文',
 
         // === editor header ===
-        'header.title': '3D EDITOR',
+        'header.title': '3DViewerIDV',
         'header.translateTitle': 'Translate (W)',
         'header.rotateTitle': 'Rotate (E)',
         'header.scaleTitle': 'Scale (R)',
@@ -72,7 +72,7 @@ const translations = {
         'world.imageOverridesColor': 'Image overrides the color when set. For best results use a 2:1 panorama.',
         'world.imageTooLarge': 'Image is too large (max 10 MB).',
         'world.skyboxMapping': 'Mapping',
-        'world.transparent': 'Transparent background (for OBS)',
+        'world.transparent': 'Transparent in OBS',
         'world.transparentHint': 'Canvas renders transparent so scene contents composite over layers below in OBS. Color and image are ignored.',
         'world.shadows': 'Shadows',
         'world.enabled': 'Enabled',
@@ -217,7 +217,7 @@ const translations = {
         'world.imageOverridesColor': '设置图片后将替换颜色。建议使用 2:1 全景图。',
         'world.imageTooLarge': '图片过大（最大 10 MB）。',
         'world.skyboxMapping': '映射',
-        'world.transparent': '透明背景（用于 OBS）',
+        'world.transparent': '在 OBS 中透明',
         'world.transparentHint': '画布以透明方式渲染，场景内容可在 OBS 中叠加于其下方图层之上。颜色和图片将被忽略。',
         'world.shadows': '阴影',
         'world.enabled': '启用',
