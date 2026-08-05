@@ -550,6 +550,21 @@ class Sequencer extends EventTarget {
         }
     }
 
+    // Preview the pose at time t without registering a runner (for the editor scrubber).
+    // Stops any active runner for this sequence so playback doesn't fight the scrub.
+    sampleAt(id, t) {
+        const seq = this.sequences.get(id);
+        if (!seq || seq.keyframes.length === 0) return;
+        if (this.active.has(id)) {
+            this.active.delete(id);
+            this._emit('seq:stop', { id });
+        }
+        const duration = this.effectiveDuration(seq);
+        const clamped = duration > 0 ? Math.max(0, Math.min(t, duration)) : 0;
+        this._tickSequence(seq, clamped);
+        this._emit('seq:scrub', { id, t: clamped, duration });
+    }
+
     _tickSequence(seq, t) {
         const kfs = seq.keyframes;
         if (kfs.length === 0) return;

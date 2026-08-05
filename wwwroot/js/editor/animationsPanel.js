@@ -18,6 +18,384 @@ const previewAnchors = new Map();           // seqId -> snapshot
 
 const activePreview = new Map();            // seqId -> { kf, key }
 
+let scrubId = null;
+let scrubBarEl = null;
+let scrubSelectedT = null;   // t of the currently-selected keyframe
+let scrubCurrentT = 0;       // playhead time
+let scrubPlayRafId = null;   // RAF id while the playhead follows a running sequence
+let scrubGizmoOn = false;    // whether we've attached the gizmo/preview to a kf
+
+const SCRUB_SNAP = 0.1;
+function snapT(t, shift) {
+    if (shift) return Math.max(0, t);
+    return Math.max(0, Math.round(t / SCRUB_SNAP) * SCRUB_SNAP);
+}
+
+function openScrubBar(id) {
+    if (scrubId === id) return;
+    closeScrubBar();
+    scrubId = id;
+    scrubSelectedT = null;
+    scrubCurrentT = 0;
+    scrubGizmoOn = false;
+    scrubBarEl = document.createElement('div');
+    scrubBarEl.className = 'sequence-scrub-bar';
+    document.body.appendChild(scrubBarEl);
+    renderScrubBar();
+    sequencer.addEventListener('seq:update', onScrubSeqUpdate);
+    sequencer.addEventListener('seq:remove', onScrubSeqRemove);
+    sequencer.addEventListener('seq:play', onScrubSeqPlay);
+    sequencer.addEventListener('seq:stop', onScrubSeqStop);
+    document.addEventListener('keydown', onScrubKeyDown);
+}
+
+function closeScrubBar() {
+    if (!scrubBarEl) return;
+    stopPlayheadFollow();
+    scrubDetachGizmo();
+    scrubBarEl.remove();
+    scrubBarEl = null;
+    scrubId = null;
+    scrubSelectedT = null;
+    sequencer.removeEventListener('seq:update', onScrubSeqUpdate);
+    sequencer.removeEventListener('seq:remove', onScrubSeqRemove);
+    sequencer.removeEventListener('seq:play', onScrubSeqPlay);
+    sequencer.removeEventListener('seq:stop', onScrubSeqStop);
+    document.removeEventListener('keydown', onScrubKeyDown);
+}
+
+function onScrubSeqUpdate(e) {
+    if (e.detail?.id === scrubId) renderScrubBar();
+}
+function onScrubSeqRemove(e) {
+    if (e.detail?.id === scrubId) {
+        closeScrubBar();
+        renderAnimationsPanel();
+    }
+}
+function onScrubSeqPlay(e) {
+    if (e.detail?.id !== scrubId) return;
+    // Detach gizmo so the play preview isn't fighting the gizmo/edit path.
+    scrubDetachGizmo();
+    scrubSelectedT = null;
+    startPlayheadFollow();
+    renderScrubBar();
+}
+function onScrubSeqStop(e) {
+    if (e.detail?.id !== scrubId) return;
+    stopPlayheadFollow();
+    renderScrubBar();
+}
+
+function startPlayheadFollow() {
+    stopPlayheadFollow();
+    const tick = () => {
+        if (!scrubId) return;
+        const runner = sequencer.active.get(scrubId);
+        if (!runner) { stopPlayheadFollow(); return; }
+        const seq = sequencer.getSequence(scrubId);
+        if (!seq) return;
+        const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
+        const elapsed = sequencer.now - runner.startTime;
+        scrubCurrentT = duration > 0 ? Math.max(0, Math.min(elapsed % duration, duration)) : 0;
+        updatePlayheadAndTime();
+        scrubPlayRafId = requestAnimationFrame(tick);
+    };
+    scrubPlayRafId = requestAnimationFrame(tick);
+}
+function stopPlayheadFollow() {
+    if (scrubPlayRafId != null) cancelAnimationFrame(scrubPlayRafId);
+    scrubPlayRafId = null;
+}
+
+function scrubTogglePlay() {
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq) return;
+    if (sequencer.isPlaying(scrubId)) {
+        stopSequence(scrubId);
+    } else {
+        scrubDetachGizmo();
+        scrubSelectedT = null;
+        playSequence(scrubId, { iterationCount: seq.loop ? Infinity : 1 });
+    }
+}
+
+function scrubAttachGizmoTo(seq, kf) {
+    // Reuses the sidebar's kf-preview mechanism: applies pose, attaches gizmo, wires write-back.
+    selectKeyframePreview(seq, kf, kfKey(seq.id, kf.t));
+    scrubGizmoOn = true;
+}
+function scrubDetachGizmo() {
+    if (!scrubGizmoOn) return;
+    const seq = sequencer.getSequence(scrubId);
+    if (seq && scrubSelectedT != null) {
+        const kf = findKfByT(seq, scrubSelectedT);
+        if (kf) deselectKeyframePreview(seq, kfKey(seq.id, kf.t));
+    }
+    scrubGizmoOn = false;
+}
+
+function scrubDeleteSelected() {
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq || scrubSelectedT == null) return;
+    scrubDetachGizmo();
+    const t = scrubSelectedT;
+    scrubSelectedT = null;
+    sequencer.removeKeyframe(scrubId, t);
+}
+function scrubNudgeSelected(delta) {
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq || scrubSelectedT == null) return;
+    const kf = findKfByT(seq, scrubSelectedT);
+    if (!kf) return;
+    const newT = Math.max(0, kf.t + delta);
+    scrubSelectedT = newT;
+    sequencer.setKeyframeTime(scrubId, kf.t, newT);
+}
+function scrubSetPlayhead(t) {
+    scrubCurrentT = Math.max(0, t);
+    sequencer.sampleAt(scrubId, scrubCurrentT);
+    updatePlayheadAndTime();
+}
+function scrubAddAtPlayhead() {
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq) return;
+    const t = scrubCurrentT;
+    sequencer.recordKeyframe(scrubId, t);
+    scrubSelectedT = t;
+    // Re-render happens via seq:update; attach gizmo after render so it targets the fresh kf.
+    queueMicrotask(() => {
+        const fresh = sequencer.getSequence(scrubId);
+        const kf = fresh && findKfByT(fresh, t);
+        if (kf) scrubAttachGizmoTo(fresh, kf);
+    });
+}
+
+function onScrubKeyDown(e) {
+    if (!scrubBarEl) return;
+    const inInput = !!e.target?.matches?.('input, textarea, select');
+    if (e.key === ' ' && !inInput) {
+        e.preventDefault();
+        scrubTogglePlay();
+        return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !inInput && scrubSelectedT != null) {
+        e.preventDefault();
+        scrubDeleteSelected();
+        return;
+    }
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !inInput && scrubSelectedT != null) {
+        e.preventDefault();
+        const step = e.shiftKey ? 0.5 : 0.05;
+        scrubNudgeSelected(e.key === 'ArrowLeft' ? -step : step);
+        return;
+    }
+    if (e.key === 'Home' && !inInput) {
+        e.preventDefault();
+        scrubSetPlayhead(0);
+        return;
+    }
+    if (e.key === 'End' && !inInput) {
+        e.preventDefault();
+        const seq = sequencer.getSequence(scrubId);
+        if (seq) scrubSetPlayhead(sequencer.effectiveDuration(seq));
+        return;
+    }
+}
+
+function findKfByT(seq, t) {
+    if (seq == null || t == null) return null;
+    return seq.keyframes.find(k => Math.abs(k.t - t) < 0.001) || null;
+}
+
+function renderScrubBar() {
+    if (!scrubBarEl || !scrubId) return;
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq) { closeScrubBar(); return; }
+    const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
+    const selectedKf = findKfByT(seq, scrubSelectedT);
+    if (!selectedKf) scrubSelectedT = null;
+
+    const markers = seq.keyframes.map(k => {
+        const left = (k.t / duration) * 100;
+        const isSel = selectedKf && Math.abs(k.t - selectedKf.t) < 0.001;
+        return `<div class="scrub-marker${isSel ? ' selected' : ''}" data-t="${k.t}" style="left:${left}%"></div>`;
+    }).join('');
+
+    const playheadLeft = Math.max(0, Math.min(scrubCurrentT / duration, 1)) * 100;
+    const playing = sequencer.isPlaying(scrubId);
+
+    scrubBarEl.innerHTML = `
+        <div class="scrub-head">
+            <strong>${seq.name}</strong>
+            <button class="scrub-play" title="${playing ? t('animations.stopTitle') : t('animations.playTitle')}">${playing ? '■' : '▶'}</button>
+            <button class="scrub-add" title="${t('animations.scrubAddTitle')}">+</button>
+            <span class="scrub-time"><span class="scrub-time-cur">${scrubCurrentT.toFixed(2)}</span> / ${duration.toFixed(2)}s</span>
+            <button class="scrub-close" title="${t('animations.scrubClose')}">×</button>
+        </div>
+        <div class="scrub-strip" title="${t('animations.scrubStripHint')}">
+            <div class="scrub-strip-track"></div>
+            <div class="scrub-playhead" style="left:${playheadLeft}%"></div>
+            ${markers}
+        </div>
+        <div class="scrub-axis"><span>0</span><span>${duration.toFixed(2)}s</span></div>
+        ${renderScrubEditPanel(seq, selectedKf)}
+    `;
+
+    wireScrubStrip(seq, duration);
+    if (selectedKf) wireScrubEditPanel(seq, selectedKf);
+    scrubBarEl.querySelector('.scrub-play').onclick = () => scrubTogglePlay();
+    scrubBarEl.querySelector('.scrub-add').onclick = () => scrubAddAtPlayhead();
+    scrubBarEl.querySelector('.scrub-close').onclick = () => {
+        closeScrubBar();
+        renderAnimationsPanel();
+    };
+}
+
+function renderScrubEditPanel(seq, kf) {
+    if (!kf) {
+        return `<div class="scrub-edit-hint">${t('animations.scrubHint')}</div>`;
+    }
+    const easingOpts = EASING_NAMES.map(e =>
+        `<option value="${e}" ${(kf.easing || 'cubicInOut') === e ? 'selected' : ''}>${e}</option>`
+    ).join('');
+    return `
+        <div class="scrub-edit">
+            <label>t
+                <input type="number" class="scrub-edit-t" step="0.05" min="0" value="${kf.t.toFixed(2)}">
+            </label>
+            <label title="${t('animations.easingTooltip')}">${t('animations.easingToNext')}
+                <select class="scrub-edit-easing">${easingOpts}</select>
+            </label>
+            <button class="scrub-edit-delete" title="${t('animations.scrubDeleteTitle')}">${t('animations.scrubDelete')}</button>
+        </div>
+    `;
+}
+
+function wireScrubEditPanel(seq, kf) {
+    const tInput = scrubBarEl.querySelector('.scrub-edit-t');
+    tInput.onchange = () => {
+        const newT = Math.max(0, parseFloat(tInput.value) || 0);
+        // Assign before setKeyframeTime because seq:update fires synchronously and re-renders.
+        scrubSelectedT = newT;
+        sequencer.setKeyframeTime(scrubId, kf.t, newT);
+    };
+    scrubBarEl.querySelector('.scrub-edit-easing').onchange = (e) => {
+        sequencer.setKeyframeEasing(scrubId, kf.t, e.target.value);
+    };
+    scrubBarEl.querySelector('.scrub-edit-delete').onclick = () => {
+        scrubDeleteSelected();
+    };
+}
+
+function wireScrubStrip(seq, duration) {
+    const strip = scrubBarEl.querySelector('.scrub-strip');
+    if (!strip) return;
+
+    // Raw time (unsnapped) from an event's clientX.
+    const rawTimeFromEvent = (ev) => {
+        const rect = strip.getBoundingClientRect();
+        const x = Math.max(0, Math.min(ev.clientX - rect.left, rect.width));
+        return (x / rect.width) * duration;
+    };
+    const timeFromEvent = (ev) => snapT(rawTimeFromEvent(ev), ev.shiftKey);
+
+    // Empty-strip drag: continuous playhead scrub (no snap — smooth preview).
+    // Double-click: add keyframe at that time (snapped unless shift held).
+    strip.addEventListener('pointerdown', (ev) => {
+        if (ev.target.classList.contains('scrub-marker')) return;
+        scrubCurrentT = rawTimeFromEvent(ev);
+        sequencer.sampleAt(scrubId, scrubCurrentT);
+        updatePlayheadAndTime();
+        strip.setPointerCapture(ev.pointerId);
+        const onMove = (e) => {
+            scrubCurrentT = rawTimeFromEvent(e);
+            sequencer.sampleAt(scrubId, scrubCurrentT);
+            updatePlayheadAndTime();
+        };
+        const onUp = () => {
+            strip.removeEventListener('pointermove', onMove);
+            strip.removeEventListener('pointerup', onUp);
+            strip.removeEventListener('pointercancel', onUp);
+        };
+        strip.addEventListener('pointermove', onMove);
+        strip.addEventListener('pointerup', onUp);
+        strip.addEventListener('pointercancel', onUp);
+    });
+    strip.addEventListener('dblclick', (ev) => {
+        if (ev.target.classList.contains('scrub-marker')) return;
+        const tNew = timeFromEvent(ev);
+        scrubCurrentT = tNew;
+        scrubSelectedT = tNew;
+        sequencer.recordKeyframe(scrubId, tNew);
+        queueMicrotask(() => {
+            const fresh = sequencer.getSequence(scrubId);
+            const kf = fresh && findKfByT(fresh, tNew);
+            if (kf) scrubAttachGizmoTo(fresh, kf);
+        });
+    });
+
+    // Marker: click selects (+ gizmo attach); drag moves the kf.
+    strip.querySelectorAll('.scrub-marker').forEach(marker => {
+        marker.addEventListener('pointerdown', (ev) => {
+            ev.stopPropagation();
+            ev.preventDefault();
+            const originalT = parseFloat(marker.dataset.t);
+            let currentT = originalT;
+            marker.setPointerCapture(ev.pointerId);
+            marker.classList.add('dragging');
+            // Detach gizmo during drag so preview updates flow through sampleAt (which bypasses
+            // the write-back listener) — otherwise mid-drag intermediate poses corrupt the kf.
+            scrubDetachGizmo();
+
+            const onMove = (e) => {
+                currentT = timeFromEvent(e);
+                marker.style.left = `${(currentT / duration) * 100}%`;
+                scrubCurrentT = currentT;
+                sequencer.sampleAt(scrubId, currentT);
+                updatePlayheadAndTime();
+            };
+            const onUp = () => {
+                marker.removeEventListener('pointermove', onMove);
+                marker.removeEventListener('pointerup', onUp);
+                marker.removeEventListener('pointercancel', onUp);
+                marker.classList.remove('dragging');
+                scrubSelectedT = currentT;
+                if (Math.abs(currentT - originalT) > 0.001) {
+                    // setKeyframeTime → seq:update → re-render. Attach gizmo after render.
+                    sequencer.setKeyframeTime(scrubId, originalT, currentT);
+                    queueMicrotask(() => {
+                        const fresh = sequencer.getSequence(scrubId);
+                        const kf = fresh && findKfByT(fresh, currentT);
+                        if (kf) scrubAttachGizmoTo(fresh, kf);
+                    });
+                } else {
+                    // Pure click: preview + re-render + attach gizmo.
+                    sequencer.sampleAt(scrubId, originalT);
+                    renderScrubBar();
+                    const fresh = sequencer.getSequence(scrubId);
+                    const kf = fresh && findKfByT(fresh, originalT);
+                    if (kf) scrubAttachGizmoTo(fresh, kf);
+                }
+            };
+            marker.addEventListener('pointermove', onMove);
+            marker.addEventListener('pointerup', onUp);
+            marker.addEventListener('pointercancel', onUp);
+        });
+    });
+}
+
+function updatePlayheadAndTime() {
+    if (!scrubBarEl) return;
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq) return;
+    const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
+    const ph = scrubBarEl.querySelector('.scrub-playhead');
+    const label = scrubBarEl.querySelector('.scrub-time-cur');
+    if (ph) ph.style.left = `${Math.max(0, Math.min(scrubCurrentT / duration, 1)) * 100}%`;
+    if (label) label.textContent = scrubCurrentT.toFixed(2);
+}
+
 // Set while the panel writes to the registry, to skip the sync listener and avoid feedback loops.
 let suppressSync = false;
 
@@ -542,6 +920,7 @@ function sequenceRow(spec) {
             <input class="name-input" type="text" value="${spec.name}">
             <span class="seq-duration muted">${duration.toFixed(2)}s</span>
             <button class="play-btn" title="${playing ? t('animations.stopTitle') : t('animations.playTitle')}">${playing ? '■' : '▶'}</button>
+            <button class="scrub-btn ${scrubId === spec.id ? 'active' : ''}" title="${t('animations.scrubTitle')}" ${spec.keyframes.length === 0 ? 'disabled' : ''}>↔</button>
             <button class="duplicate-btn" title="${t('animations.duplicateSeq')}">⧉</button>
             <button class="remove-btn" title="${t('animations.deleteSeq')}">×</button>
         </div>
@@ -614,6 +993,11 @@ function sequenceRow(spec) {
         } else {
             playSequence(spec.id, { iterationCount: spec.loop ? Infinity : 1 });
         }
+        renderAnimationsPanel();
+    };
+    row.querySelector('.scrub-btn').onclick = () => {
+        if (scrubId === spec.id) closeScrubBar();
+        else openScrubBar(spec.id);
         renderAnimationsPanel();
     };
     row.querySelector('.duplicate-btn').onclick = () => {

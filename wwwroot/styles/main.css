@@ -486,7 +486,8 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 .row-head .select-btn,
 .row-head .remove-btn,
 .row-head .play-btn,
-.row-head .duplicate-btn {
+.row-head .duplicate-btn,
+.row-head .scrub-btn {
     background: #2c2c2c;
     border: 1px solid #3c3c3c;
     color: #e5e5e5;
@@ -497,10 +498,185 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 }
 .row-head .remove-btn { color: #ff8080; }
 .row-head .play-btn { color: #80ff80; }
+.row-head .scrub-btn { color: #7bb1ff; }
+.row-head .scrub-btn.active { background: #3a4a6c; border-color: #5a7ab0; }
+.row-head .scrub-btn:disabled { opacity: 0.4; cursor: default; }
 .row-head .select-btn:hover,
 .row-head .play-btn:hover,
 .row-head .duplicate-btn:hover,
+.row-head .scrub-btn:not(:disabled):hover,
 .row-head .remove-btn:hover { background: #3c3c3c; }
+
+/* Sequence scrubber — floating bar docked at the bottom of the viewport
+   so a horizontal slider has room to breathe (the animations tab is narrow). */
+.sequence-scrub-bar {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    width: min(720px, calc(100vw - 40px));
+    background: rgba(30, 30, 30, 0.95);
+    border: 1px solid #3c3c3c;
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+    padding: 10px 14px;
+    z-index: 1000;
+    color: #e5e5e5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    backdrop-filter: blur(6px);
+}
+.sequence-scrub-bar .scrub-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.sequence-scrub-bar .scrub-head strong {
+    font-size: 12px;
+    color: #fff;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sequence-scrub-bar .scrub-time {
+    color: #b3b3b3;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.sequence-scrub-bar .scrub-time-cur { color: #e5e5e5; }
+.sequence-scrub-bar .scrub-close,
+.sequence-scrub-bar .scrub-play,
+.sequence-scrub-bar .scrub-add {
+    background: #2c2c2c;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    height: 24px;
+}
+.sequence-scrub-bar .scrub-close {
+    background: transparent;
+    border: none;
+    color: #b3b3b3;
+    font-size: 16px;
+    padding: 0 4px;
+    height: auto;
+}
+.sequence-scrub-bar .scrub-close:hover { color: #fff; }
+.sequence-scrub-bar .scrub-play { color: #80ff80; }
+.sequence-scrub-bar .scrub-add { color: #ffcf47; }
+.sequence-scrub-bar .scrub-play:hover,
+.sequence-scrub-bar .scrub-add:hover { background: #3c3c3c; }
+.sequence-scrub-bar .scrub-strip {
+    position: relative;
+    height: 32px;
+    margin: 4px 0 2px 0;
+    cursor: crosshair;
+    user-select: none;
+}
+.sequence-scrub-bar .scrub-strip-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 6px;
+    transform: translateY(-50%);
+    background: #3c3c3c;
+    border-radius: 3px;
+    pointer-events: none;
+}
+.sequence-scrub-bar .scrub-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #7bb1ff;
+    transform: translateX(-1px);
+    pointer-events: none;
+    box-shadow: 0 0 6px rgba(123, 177, 255, 0.5);
+}
+.sequence-scrub-bar .scrub-marker {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: #d0d0d0;
+    border: 1px solid #1e1e1e;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    cursor: grab;
+    transition: background 0.1s, transform 0.05s;
+}
+.sequence-scrub-bar .scrub-marker:hover { background: #ffffff; }
+.sequence-scrub-bar .scrub-marker.selected {
+    background: #ffcf47;
+    width: 14px;
+    height: 14px;
+}
+.sequence-scrub-bar .scrub-marker.dragging {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) rotate(45deg) scale(1.15);
+}
+.sequence-scrub-bar .scrub-axis {
+    display: flex;
+    justify-content: space-between;
+    color: #7a7a7a;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 6px;
+}
+.sequence-scrub-bar .scrub-edit-hint {
+    color: #7a7a7a;
+    font-size: 11px;
+    padding: 6px 2px 2px 2px;
+    border-top: 1px solid #2c2c2c;
+    margin-top: 4px;
+}
+.sequence-scrub-bar .scrub-edit {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 1px solid #2c2c2c;
+}
+.sequence-scrub-bar .scrub-edit label {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    color: #b3b3b3;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.sequence-scrub-bar .scrub-edit input[type="number"],
+.sequence-scrub-bar .scrub-edit select {
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 11px;
+    font-family: inherit;
+}
+.sequence-scrub-bar .scrub-edit input[type="number"] { width: 70px; }
+.sequence-scrub-bar .scrub-edit button {
+    background: #2c2c2c;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    height: 26px;
+}
+.sequence-scrub-bar .scrub-edit button:hover { background: #3c3c3c; }
+.sequence-scrub-bar .scrub-edit .scrub-edit-delete { color: #ff8080; }
 .row-head strong {
     flex: 1;
     color: #fff;
