@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DEV } from '../config.js';
 
 // Single source of truth for editable scene objects. Mutations emit change events.
 
@@ -29,6 +30,11 @@ export const SHADOW_MAP_TYPES = {
     VSM: 3
 };
 
+export const SKYBOX_MAPPINGS = {
+    Equirectangular: THREE.EquirectangularReflectionMapping,
+    UV: THREE.UVMapping
+};
+
 export const TONE_MAPPING_TYPES = {
     None: THREE.NoToneMapping,
     Linear: THREE.LinearToneMapping,
@@ -41,6 +47,14 @@ export const TONE_MAPPING_TYPES = {
 
 const WORLD_DEFAULTS = {
     backgroundColor: '#1a1a2e',
+    // Optional user-uploaded panorama as a data URL. When set, replaces backgroundColor
+    // as the scene background.
+    skyboxImage: null,
+    // 'Equirectangular' wraps a 2:1 panorama around the scene; 'UV' flat-maps the image.
+    skyboxMapping: 'Equirectangular',
+    // When true, both color and image are ignored; scene.background = null so the
+    // canvas renders transparent (for OBS browser sources).
+    transparentBackground: false,
     shadowsEnabled: true,
     shadowMapType: 'PCFSoft',
     shadowMapSize: SHADOW_DEFAULTS.mapSize,
@@ -450,12 +464,28 @@ class Registry extends EventTarget {
     }
 
     _applyWorldSpec() {
-        if (this.scene && this.world.backgroundColor) {
-            const colorInt = hexToInt(this.world.backgroundColor);
-            if (this.scene.background?.setHex) {
-                this.scene.background.setHex(colorInt);
+        // Editor gets a checkerboard so transparency is legible; OBS/browser stays truly transparent.
+        if (typeof document !== 'undefined') {
+            const on = !!this.world.transparentBackground;
+            document.documentElement.classList.toggle('transparent-bg', on && !DEV);
+            document.documentElement.classList.toggle('transparent-bg-editor', on && DEV);
+        }
+        if (this.scene) {
+            if (this.world.transparentBackground) {
+                this._disposeSkyboxTexture();
+                this.scene.background = null;
+            } else if (this.world.skyboxImage) {
+                this._applySkyboxImage(this.world.skyboxImage);
             } else {
-                this.scene.background = new THREE.Color(colorInt);
+                this._disposeSkyboxTexture();
+                if (this.world.backgroundColor) {
+                    const colorInt = hexToInt(this.world.backgroundColor);
+                    if (this.scene.background?.isColor) {
+                        this.scene.background.setHex(colorInt);
+                    } else {
+                        this.scene.background = new THREE.Color(colorInt);
+                    }
+                }
             }
         }
         if (this.rendererRef?.shadowMap) {
@@ -493,6 +523,94 @@ class Registry extends EventTarget {
             if (entry.threeObject.castShadow) {
                 configureShadow(entry.threeObject, entry.spec.extras, this.world);
             }
+        }
+    }
+
+    // Loads the data URL as a texture and sets it as scene.background. Mapping is read
+    // from world.skyboxMapping. Mapping-only changes reuse the cached texture in-place.
+    // GIFs go through a CanvasTexture path that snapshots the animated <img> each frame.
+    _applySkyboxImage(dataUrl) {
+        const desiredMapping = SKYBOX_MAPPINGS[this.world.skyboxMapping] ?? THREE.EquirectangularReflectionMapping;
+        if (this._skyboxTexture && this._skyboxTextureSource === dataUrl) {
+            if (this._skyboxTexture.mapping !== desiredMapping) {
+                this._skyboxTexture.mapping = desiredMapping;
+            }
+            if (this.scene) this.scene.background = this._skyboxTexture;
+            return;
+        }
+        if (dataUrl.startsWith('data:image/gif')) {
+            this._applyGifSkybox(dataUrl, desiredMapping);
+        } else {
+            this._applyStaticSkybox(dataUrl, desiredMapping);
+        }
+    }
+
+    _applyStaticSkybox(dataUrl, mapping) {
+        new THREE.TextureLoader().load(
+            dataUrl,
+            (tex) => {
+                tex.mapping = mapping;
+                tex.colorSpace = THREE.SRGBColorSpace;
+                if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
+                    tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
+                }
+                // Race: if the user cleared/replaced the image while this was loading, drop it.
+                if (this.world.skyboxImage !== dataUrl) { tex.dispose(); return; }
+                this._disposeSkyboxTexture();
+                this._skyboxTexture = tex;
+                this._skyboxTextureSource = dataUrl;
+                if (this.scene) this.scene.background = tex;
+            },
+            undefined,
+            (err) => { console.error('Failed to load skybox image:', err); }
+        );
+    }
+
+    // Browsers animate GIFs on the <img> element itself; we redraw it to a canvas
+    // per frame and let CanvasTexture pick up the change.
+    _applyGifSkybox(dataUrl, mapping) {
+        const img = document.createElement('img');
+        img.onload = () => {
+            if (this.world.skyboxImage !== dataUrl) return;
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.mapping = mapping;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
+                tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
+            }
+            this._disposeSkyboxTexture();
+            this._skyboxTexture = tex;
+            this._skyboxTextureSource = dataUrl;
+            this._skyboxGif = { img, canvas, ctx, texture: tex, rafId: 0 };
+            if (this.scene) this.scene.background = tex;
+            this._gifTick();
+        };
+        img.onerror = () => console.error('Failed to load GIF skybox');
+        img.src = dataUrl;
+    }
+
+    _gifTick() {
+        const g = this._skyboxGif;
+        if (!g) return;
+        g.rafId = requestAnimationFrame(() => this._gifTick());
+        g.ctx.drawImage(g.img, 0, 0);
+        g.texture.needsUpdate = true;
+    }
+
+    _disposeSkyboxTexture() {
+        if (this._skyboxGif) {
+            cancelAnimationFrame(this._skyboxGif.rafId);
+            this._skyboxGif = null;
+        }
+        if (this._skyboxTexture) {
+            this._skyboxTexture.dispose();
+            this._skyboxTexture = null;
+            this._skyboxTextureSource = null;
         }
     }
 

@@ -11,7 +11,9 @@ export async function setupRenderer(canvas, rendererType = 'webgl') {
         await renderer.init();
     } else {
         console.log('Initializing WebGL Renderer');
-        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        // alpha: true gives the canvas an alpha channel so scene.background = null renders
+        // transparent pixels — needed for the World tab's "Transparent background" setting.
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     }
 
     renderer.setSize(window.innerWidth, window.innerHeight);
