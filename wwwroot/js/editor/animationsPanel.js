@@ -1,4 +1,4 @@
-import { sequencer, EASING_NAMES, availableTargets, captureSnapshot } from '../animation/sequencer.js';
+import { sequencer, EASING_NAMES, ease, availableTargets, captureSnapshot } from '../animation/sequencer.js';
 import { clipManager } from '../animation/clips.js';
 import { listKnownEvents, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
 import { registry, intToHex } from './registry.js';
@@ -9,7 +9,20 @@ import { t } from '../i18n.js';
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
 
-const expandedKeyframes = new Set();        // `${seqId}@${t}`
+// Per-track pip colors — used by the timeline strip to show which properties have
+// a keyframe at each unified marker.
+const PROP_COLORS = {
+    position: '#4a9eff',
+    rotation: '#4ade80',
+    scale: '#a78bfa',
+    fov: '#fbbf24',
+    intensity: '#fb923c',
+    color: '#f87171',
+    target: '#22d3ee',
+    extras: '#a3a3a3'
+};
+
+const expandedKeyframes = new Set();        // kf references (survives duplicate-t)
 const expandedSequences = new Set();        // seq ids currently expanded
 const expandedClips = new Set();            // clip names currently expanded
 
@@ -20,7 +33,8 @@ const activePreview = new Map();            // seqId -> { kf, key }
 
 let scrubId = null;
 let scrubBarEl = null;
-let scrubSelectedT = null;   // t of the currently-selected keyframe
+let scrubSelectedT = null;   // t of the currently-selected keyframe (fallback lookup)
+let scrubSelectedKf = null;  // reference to the actual selected kf (survives duplicate ts)
 let scrubCurrentT = 0;       // playhead time
 let scrubPlayRafId = null;   // RAF id while the playhead follows a running sequence
 let scrubGizmoOn = false;    // whether we've attached the gizmo/preview to a kf
@@ -36,6 +50,7 @@ function openScrubBar(id) {
     closeScrubBar();
     scrubId = id;
     scrubSelectedT = null;
+    scrubSelectedKf = null;
     scrubCurrentT = 0;
     scrubGizmoOn = false;
     scrubBarEl = document.createElement('div');
@@ -47,6 +62,12 @@ function openScrubBar(id) {
     sequencer.addEventListener('seq:play', onScrubSeqPlay);
     sequencer.addEventListener('seq:stop', onScrubSeqStop);
     document.addEventListener('keydown', onScrubKeyDown);
+
+    // Auto-select the first keyframe so the editor opens with something focused.
+    const openedSeq = sequencer.getSequence(id);
+    if (openedSeq && openedSeq.keyframes.length > 0) {
+        scrubSelectAndPreview(openedSeq, openedSeq.keyframes[0]);
+    }
 }
 
 function closeScrubBar() {
@@ -57,6 +78,7 @@ function closeScrubBar() {
     scrubBarEl = null;
     scrubId = null;
     scrubSelectedT = null;
+    scrubSelectedKf = null;
     sequencer.removeEventListener('seq:update', onScrubSeqUpdate);
     sequencer.removeEventListener('seq:remove', onScrubSeqRemove);
     sequencer.removeEventListener('seq:play', onScrubSeqPlay);
@@ -75,9 +97,9 @@ function onScrubSeqRemove(e) {
 }
 function onScrubSeqPlay(e) {
     if (e.detail?.id !== scrubId) return;
-    // Detach gizmo so the play preview isn't fighting the gizmo/edit path.
+    // Detach the gizmo while playing (so it doesn't chase the moving target),
+    // but keep the selection intact so it comes back on pause.
     scrubDetachGizmo();
-    scrubSelectedT = null;
     startPlayheadFollow();
     renderScrubBar();
 }
@@ -85,6 +107,10 @@ function onScrubSeqStop(e) {
     if (e.detail?.id !== scrubId) return;
     stopPlayheadFollow();
     renderScrubBar();
+    // Re-attach gizmo to whatever was selected before play started.
+    const seq = sequencer.getSequence(scrubId);
+    const kf = seq && currentSelectedKf(seq);
+    if (kf) scrubAttachGizmoTo(seq, kf);
 }
 
 function startPlayheadFollow() {
@@ -113,44 +139,54 @@ function scrubTogglePlay() {
     if (!seq) return;
     if (sequencer.isPlaying(scrubId)) {
         stopSequence(scrubId);
+        // stopSequence restores home pose; freeze at playhead instead so pause looks paused.
+        sequencer.sampleAt(scrubId, scrubCurrentT);
     } else {
-        scrubDetachGizmo();
-        scrubSelectedT = null;
+        // Keep selection so it resumes after pause; gizmo detach handled in seq:play listener.
         playSequence(scrubId, { iterationCount: seq.loop ? Infinity : 1 });
+        // Resume from playhead position rather than jumping back to t=0.
+        const runner = sequencer.active.get(scrubId);
+        if (runner) runner.startTime = sequencer.now - scrubCurrentT;
     }
 }
 
 function scrubAttachGizmoTo(seq, kf) {
     // Reuses the sidebar's kf-preview mechanism: applies pose, attaches gizmo, wires write-back.
-    selectKeyframePreview(seq, kf, kfKey(seq.id, kf.t));
+    selectKeyframePreview(seq, kf);
     scrubGizmoOn = true;
+    // Mirror the selection into the vertical sidebar: expand the sequence + scroll into view.
+    expandedSequences.add(seq.id);
+    renderAnimationsPanel();
+    setTimeout(() => {
+        const seqRow = document.querySelector(`.editor-row[data-id="${seq.id}"]`);
+        if (!seqRow) return;
+        const kfRow = Array.from(seqRow.querySelectorAll('.kf-row'))
+            .find(r => Math.abs(parseFloat(r.dataset.t) - kf.t) < 0.001);
+        if (kfRow) kfRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 0);
 }
 function scrubDetachGizmo() {
     if (!scrubGizmoOn) return;
     const seq = sequencer.getSequence(scrubId);
-    if (seq && scrubSelectedT != null) {
-        const kf = findKfByT(seq, scrubSelectedT);
-        if (kf) deselectKeyframePreview(seq, kfKey(seq.id, kf.t));
-    }
+    const kf = scrubSelectedKf || (seq && scrubSelectedT != null ? findKfByT(seq, scrubSelectedT) : null);
+    if (seq && kf) deselectKeyframePreview(seq, kf);
     scrubGizmoOn = false;
 }
 
 function scrubDeleteSelected() {
-    const seq = sequencer.getSequence(scrubId);
-    if (!seq || scrubSelectedT == null) return;
+    const kfToRemove = scrubSelectedKf;
+    if (!kfToRemove) return;
     scrubDetachGizmo();
-    const t = scrubSelectedT;
     scrubSelectedT = null;
-    sequencer.removeKeyframe(scrubId, t);
+    scrubSelectedKf = null;
+    sequencer.removeKeyframeRef(scrubId, kfToRemove);
 }
 function scrubNudgeSelected(delta) {
-    const seq = sequencer.getSequence(scrubId);
-    if (!seq || scrubSelectedT == null) return;
-    const kf = findKfByT(seq, scrubSelectedT);
+    const kf = scrubSelectedKf;
     if (!kf) return;
     const newT = Math.max(0, kf.t + delta);
     scrubSelectedT = newT;
-    sequencer.setKeyframeTime(scrubId, kf.t, newT);
+    sequencer.setKeyframeTimeRef(scrubId, kf, newT);
 }
 function scrubSetPlayhead(t) {
     scrubCurrentT = Math.max(0, t);
@@ -208,18 +244,46 @@ function findKfByT(seq, t) {
     return seq.keyframes.find(k => Math.abs(k.t - t) < 0.001) || null;
 }
 
+function showScrubDragHint() {
+    if (!scrubBarEl || scrubBarEl.querySelector('.scrub-drag-hint')) return;
+    const el = document.createElement('div');
+    el.className = 'scrub-drag-hint';
+    el.textContent = t('animations.scrubDragHint');
+    scrubBarEl.appendChild(el);
+}
+function hideScrubDragHint() {
+    scrubBarEl?.querySelector('.scrub-drag-hint')?.remove();
+}
+
 function renderScrubBar() {
     if (!scrubBarEl || !scrubId) return;
     const seq = sequencer.getSequence(scrubId);
     if (!seq) { closeScrubBar(); return; }
     const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
-    const selectedKf = findKfByT(seq, scrubSelectedT);
-    if (!selectedKf) scrubSelectedT = null;
+    // Reconcile selection reference against the current array (survives sort/mutation).
+    const selectedKf = currentSelectedKf(seq);
+    if (selectedKf) {
+        scrubSelectedKf = selectedKf;
+        scrubSelectedT = selectedKf.t;
+    } else {
+        scrubSelectedKf = null;
+        scrubSelectedT = null;
+    }
 
-    const markers = seq.keyframes.map(k => {
+    const markers = seq.keyframes.map((k, i) => {
         const left = (k.t / duration) * 100;
-        const isSel = selectedKf && Math.abs(k.t - selectedKf.t) < 0.001;
-        return `<div class="scrub-marker${isSel ? ' selected' : ''}" data-t="${k.t}" style="left:${left}%"></div>`;
+        const isSel = selectedKf === k;
+        const tracks = sequencer.tracksAtTime(seq, k.t);
+        const pips = tracks.map(tk => {
+            const prop = tk.slice(tk.lastIndexOf('.') + 1);
+            const color = PROP_COLORS[prop] || '#a3a3a3';
+            return `<span class="scrub-track-pip" style="background:${color}" title="${tk}"></span>`;
+        }).join('');
+        return `
+            <div class="scrub-marker${isSel ? ' selected' : ''}" data-t="${k.t}" data-idx="${i}" style="left:${left}%">
+                <div class="scrub-marker-diamond"></div>
+                ${pips ? `<div class="scrub-marker-pips">${pips}</div>` : ''}
+            </div>`;
     }).join('');
 
     const playheadLeft = Math.max(0, Math.min(scrubCurrentT / duration, 1)) * 100;
@@ -239,10 +303,12 @@ function renderScrubBar() {
             ${markers}
         </div>
         <div class="scrub-axis"><span>0</span><span>${duration.toFixed(2)}s</span></div>
+        ${renderTrackRows(seq, duration, selectedKf)}
         ${renderScrubEditPanel(seq, selectedKf)}
     `;
 
     wireScrubStrip(seq, duration);
+    wireTrackRows(seq);
     if (selectedKf) wireScrubEditPanel(seq, selectedKf);
     scrubBarEl.querySelector('.scrub-play').onclick = () => scrubTogglePlay();
     scrubBarEl.querySelector('.scrub-add').onclick = () => scrubAddAtPlayhead();
@@ -252,40 +318,264 @@ function renderScrubBar() {
     };
 }
 
+function propOfTrackKey(trackKey) {
+    const dot = trackKey.lastIndexOf('.');
+    return dot >= 0 ? trackKey.slice(dot + 1) : trackKey;
+}
+
+// Per-track keyframe bars. Each row is one track (property); dots mark that track's entries.
+// Clicking a dot jumps the playhead + selects the containing unified kf.
+function renderTrackRows(seq, duration, selectedKf) {
+    if (!seq.tracks) return '';
+    const entries = Object.entries(seq.tracks).filter(([, arr]) => arr.length > 0);
+    if (entries.length === 0) return '';
+    const rows = entries.map(([trackKey, kfs]) => {
+        const prop = propOfTrackKey(trackKey);
+        const color = PROP_COLORS[prop] || '#a3a3a3';
+        const dots = kfs.map(e => {
+            const left = duration > 0 ? Math.max(0, Math.min(1, e.t / duration)) * 100 : 0;
+            const isSel = selectedKf && Math.abs(selectedKf.t - e.t) < 0.001;
+            return `<div class="scrub-track-dot${isSel ? ' selected' : ''}" data-track="${trackKey}" data-t="${e.t}" style="left:${left}%;background:${color}" title="${trackKey} @ ${e.t.toFixed(2)}s"></div>`;
+        }).join('');
+        return `
+            <div class="scrub-track-row" data-track="${trackKey}">
+                <div class="scrub-track-label" title="${trackKey}">
+                    <span class="scrub-track-label-dot" style="background:${color}"></span>
+                    ${prop}
+                </div>
+                <div class="scrub-track-strip">${dots}</div>
+            </div>`;
+    }).join('');
+    return `<div class="scrub-tracks">${rows}</div>`;
+}
+
+function wireTrackRows(seq) {
+    if (!scrubBarEl) return;
+    scrubBarEl.querySelectorAll('.scrub-track-dot').forEach(dot => {
+        dot.onclick = (e) => {
+            e.stopPropagation();
+            const t = parseFloat(dot.dataset.t);
+            const kf = seq.keyframes.find(k => Math.abs(k.t - t) < 0.001);
+            if (kf) scrubSelectAndPreview(seq, kf);
+        };
+    });
+}
+
+function scrubNeighborsOf(seq, kf) {
+    // Prefer reference match to disambiguate duplicate-t keyframes.
+    let idx = seq.keyframes.indexOf(kf);
+    if (idx < 0) idx = seq.keyframes.findIndex(k => Math.abs(k.t - kf.t) < 0.001);
+    const prev = idx > 0 ? seq.keyframes[idx - 1] : null;
+    const next = idx >= 0 && idx < seq.keyframes.length - 1 ? seq.keyframes[idx + 1] : null;
+    return { prev, next };
+}
+
+function currentSelectedKf(seq) {
+    if (!seq) return null;
+    if (scrubSelectedKf && seq.keyframes.indexOf(scrubSelectedKf) >= 0) return scrubSelectedKf;
+    return scrubSelectedT != null ? findKfByT(seq, scrubSelectedT) : null;
+}
+
+function kfBefore(seq, k) {
+    if (!k) return null;
+    const idx = seq.keyframes.findIndex(x => Math.abs(x.t - k.t) < 0.001);
+    return idx > 0 ? seq.keyframes[idx - 1] : null;
+}
+
+function diffBlock(seq, forKf) {
+    const prev = kfBefore(seq, forKf);
+    if (!prev) return '';
+    const inner = renderKfDiff(seq, prev, forKf);
+    if (!inner) return '';
+    return `
+        <div class="scrub-diff-wrap">
+            <span class="scrub-diff-arrow">→</span>
+            <div class="scrub-diff-box">${inner}</div>
+        </div>`;
+}
+
+function kfDisplayName(seq, kf) {
+    // indexOf so duplicate-t keyframes get distinct numbers.
+    let idx = seq.keyframes.indexOf(kf);
+    if (idx < 0) idx = seq.keyframes.findIndex(k => Math.abs(k.t - kf.t) < 0.001);
+    return `${t('animations.scrubKfName')} ${idx + 1}`;
+}
+
+function easingPath(name, w = 60, h = 24) {
+    const N = 24;
+    const pts = [];
+    for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const v = Math.max(0, Math.min(1, ease(name, t)));
+        pts.push(`${(t * w).toFixed(1)},${(h - v * h).toFixed(1)}`);
+    }
+    return 'M' + pts.join(' L');
+}
+
 function renderScrubEditPanel(seq, kf) {
     if (!kf) {
         return `<div class="scrub-edit-hint">${t('animations.scrubHint')}</div>`;
     }
-    const easingOpts = EASING_NAMES.map(e =>
-        `<option value="${e}" ${(kf.easing || 'cubicInOut') === e ? 'selected' : ''}>${e}</option>`
+    const { prev: prevKf, next: nextKf } = scrubNeighborsOf(seq, kf);
+
+    const easingOpts = (current) => EASING_NAMES.map(e =>
+        `<option value="${e}" ${current === e ? 'selected' : ''}>${e}</option>`
     ).join('');
+
+    const neighborInline = (k) => k ? `
+        <div class="scrub-inline scrub-inline-neighbor" data-idx="${seq.keyframes.indexOf(k)}" title="${t('animations.scrubJumpTitle')}">
+            <span class="scrub-diamond"></span>
+            <div class="scrub-inline-name-text">${kfDisplayName(seq, k)}</div>
+            <div class="scrub-inline-t muted">t=${k.t.toFixed(2)}s</div>
+            ${diffBlock(seq, k)}
+        </div>` : `
+        <div class="scrub-inline scrub-inline-empty">
+            <span class="scrub-diamond scrub-diamond-empty"></span>
+            <div class="scrub-inline-name-text muted">—</div>
+        </div>`;
+
+    // Easing lives on the earlier kf; graph shows the curve from earlier→later.
+    const easingBetween = (earlierKf, laterKf) => {
+        if (!earlierKf || !laterKf) return `<div class="scrub-inline-easing scrub-inline-easing-empty"></div>`;
+        const dt = (laterKf.t - earlierKf.t).toFixed(2);
+        const name = earlierKf.easing || 'cubicInOut';
+        return `
+        <div class="scrub-inline-easing" title="${name} · ${t('animations.easingTooltip')}">
+            <div class="scrub-easing-graph">
+                <svg class="scrub-easing-svg" width="60" height="24" viewBox="0 0 60 24">
+                    <line x1="0" y1="24" x2="60" y2="24" stroke="#3c3c3c" stroke-width="0.6"/>
+                    <line x1="0" y1="0"  x2="0"  y2="24" stroke="#3c3c3c" stroke-width="0.6"/>
+                    <path d="${easingPath(name, 60, 24)}" stroke="#7bb1ff" stroke-width="1.4" fill="none"/>
+                </svg>
+                <select class="scrub-between-easing" data-idx="${seq.keyframes.indexOf(earlierKf)}">${easingOpts(name)}</select>
+            </div>
+            <div class="scrub-inline-dt muted">${dt}s</div>
+        </div>`;
+    };
+
+    const selInline = `
+        <div class="scrub-inline scrub-inline-selected">
+            <span class="scrub-diamond scrub-diamond-selected"></span>
+            <div class="scrub-inline-name-text">${kfDisplayName(seq, kf)}</div>
+            <div class="scrub-inline-t">
+                <input type="number" class="scrub-edit-t" step="0.05" min="0" value="${kf.t.toFixed(2)}">s
+            </div>
+            ${diffBlock(seq, kf)}
+        </div>`;
+
+    // Order: prev (left, natural timeline reading) → selected → next (right).
     return `
-        <div class="scrub-edit">
-            <label>t
-                <input type="number" class="scrub-edit-t" step="0.05" min="0" value="${kf.t.toFixed(2)}">
-            </label>
-            <label title="${t('animations.easingTooltip')}">${t('animations.easingToNext')}
-                <select class="scrub-edit-easing">${easingOpts}</select>
-            </label>
-            <button class="scrub-edit-delete" title="${t('animations.scrubDeleteTitle')}">${t('animations.scrubDelete')}</button>
+        <div class="scrub-kf-inline-row">
+            ${neighborInline(prevKf)}
+            ${easingBetween(prevKf, kf)}
+            ${selInline}
+            ${easingBetween(kf, nextKf)}
+            ${neighborInline(nextKf)}
+        </div>
+        <div class="scrub-kf-nav-bottom">
+            <button class="scrub-nav-prev" ${prevKf ? '' : 'disabled'} title="${t('animations.scrubGoPrevTitle')}">◀</button>
+            <button class="scrub-nav-next" ${nextKf ? '' : 'disabled'} title="${t('animations.scrubGoNextTitle')}">▶</button>
         </div>
     `;
 }
 
+// Returns HTML: one .scrub-diff-col per property that changed, showing the total value
+// (from `toKf`) with the property label above. Empty string if nothing changed.
+function renderKfDiff(seq, fromKf, toKf) {
+    if (!fromKf) return '';
+    const target = seq.targets[0];
+    if (!target) return '';
+    const items = [];
+    const from = fromKf.snapshot || {};
+    const to = toKf.snapshot || {};
+
+    if (target === 'liveCamera' && from.liveCamera && to.liveCamera) {
+        addChangedVec3(items, 'pos', from.liveCamera.position, to.liveCamera.position);
+        addChangedVec3(items, 'rot', from.liveCamera.rotation, to.liveCamera.rotation, RAD2DEG, '°');
+        if (Math.abs((from.liveCamera.fov || 0) - (to.liveCamera.fov || 0)) > 0.01) {
+            items.push({ label: 'fov', values: (to.liveCamera.fov || 0).toFixed(2) });
+        }
+    } else if (target.startsWith('slot:')) {
+        const id = target.slice('slot:'.length);
+        const f = from.slots?.[id], b = to.slots?.[id];
+        if (f && b) {
+            addChangedVec3(items, 'pos', f.position, b.position);
+            addChangedVec3(items, 'rot', f.rotation, b.rotation, RAD2DEG, '°');
+            addChangedVec3(items, 'scl', f.scale, b.scale);
+        }
+    } else if (target.startsWith('light:')) {
+        const id = target.slice('light:'.length);
+        const f = from.lights?.[id], b = to.lights?.[id];
+        if (f && b) {
+            addChangedVec3(items, 'pos', f.position, b.position);
+            addChangedVec3(items, 'tgt', f.target, b.target);
+            if (Math.abs((f.intensity || 0) - (b.intensity || 0)) > 0.001) {
+                items.push({ label: 'int', values: (b.intensity || 0).toFixed(2) });
+            }
+            if (f.color !== b.color) items.push({ label: 'col', values: b.color });
+        }
+    }
+    if (!items.length) return '';
+    return items.map(it => `
+        <div class="scrub-diff-col">
+            <div class="scrub-diff-label">${it.label}</div>
+            <div class="scrub-diff-values">${it.values}</div>
+        </div>`).join('');
+}
+
+function addChangedVec3(items, label, a, b, scale = 1, unit = '') {
+    if (!Array.isArray(a) || !Array.isArray(b)) return;
+    const d0 = b[0] - a[0], d1 = b[1] - a[1], d2 = b[2] - a[2];
+    if (Math.abs(d0) < 0.001 && Math.abs(d1) < 0.001 && Math.abs(d2) < 0.001) return;
+    const fmt = (v) => `${(v * scale).toFixed(2)}${unit}`;
+    items.push({ label, values: `${fmt(b[0])}, ${fmt(b[1])}, ${fmt(b[2])}` });
+}
+
+function scrubSelectAndPreview(seq, kf) {
+    scrubDetachGizmo();
+    scrubSelectedKf = kf;
+    scrubSelectedT = kf.t;
+    scrubCurrentT = kf.t;
+    sequencer.sampleAt(scrubId, kf.t);
+    renderScrubBar();
+    scrubAttachGizmoTo(seq, kf);
+}
+
 function wireScrubEditPanel(seq, kf) {
     const tInput = scrubBarEl.querySelector('.scrub-edit-t');
-    tInput.onchange = () => {
-        const newT = Math.max(0, parseFloat(tInput.value) || 0);
-        // Assign before setKeyframeTime because seq:update fires synchronously and re-renders.
-        scrubSelectedT = newT;
-        sequencer.setKeyframeTime(scrubId, kf.t, newT);
-    };
-    scrubBarEl.querySelector('.scrub-edit-easing').onchange = (e) => {
-        sequencer.setKeyframeEasing(scrubId, kf.t, e.target.value);
-    };
-    scrubBarEl.querySelector('.scrub-edit-delete').onclick = () => {
-        scrubDeleteSelected();
-    };
+    if (tInput) {
+        tInput.onchange = () => {
+            const newT = Math.max(0, parseFloat(tInput.value) || 0);
+            scrubSelectedT = newT;
+            sequencer.setKeyframeTimeRef(scrubId, kf, newT);
+        };
+    }
+    // Between-easing dropdowns carry data-idx so they target the specific kf even with duplicate ts.
+    scrubBarEl.querySelectorAll('.scrub-between-easing').forEach(sel => {
+        sel.onchange = () => {
+            const easingIdx = parseInt(sel.dataset.idx, 10);
+            const easingKf = seq.keyframes[easingIdx];
+            if (easingKf) sequencer.setKeyframeEasingRef(scrubId, easingKf, sel.value);
+        };
+    });
+    const del = scrubBarEl.querySelector('.scrub-edit-delete');
+    if (del) del.onclick = () => scrubDeleteSelected();
+
+    const { prev: prevKf, next: nextKf } = scrubNeighborsOf(seq, kf);
+    const nextBtn = scrubBarEl.querySelector('.scrub-nav-next');
+    const prevBtn = scrubBarEl.querySelector('.scrub-nav-prev');
+    if (nextBtn) nextBtn.onclick = () => { if (nextKf) scrubSelectAndPreview(seq, nextKf); };
+    if (prevBtn) prevBtn.onclick = () => { if (prevKf) scrubSelectAndPreview(seq, prevKf); };
+
+    // Click a neighbor to jump-select it. Uses data-idx so duplicate-t kfs are disambiguated.
+    scrubBarEl.querySelectorAll('.scrub-inline-neighbor').forEach(el => {
+        el.style.cursor = 'pointer';
+        el.onclick = () => {
+            const nIdx = parseInt(el.dataset.idx, 10);
+            const target = seq.keyframes[nIdx];
+            if (target) scrubSelectAndPreview(seq, target);
+        };
+    });
 }
 
 function wireScrubStrip(seq, duration) {
@@ -301,26 +591,27 @@ function wireScrubStrip(seq, duration) {
     const timeFromEvent = (ev) => snapT(rawTimeFromEvent(ev), ev.shiftKey);
 
     // Empty-strip drag: continuous playhead scrub (no snap — smooth preview).
-    // Double-click: add keyframe at that time (snapped unless shift held).
+    // Uses document-level listeners so a mid-drag re-render (e.g. from a seq:stop when
+    // sampleAt clears an active play runner) doesn't orphan the listeners.
     strip.addEventListener('pointerdown', (ev) => {
         if (ev.target.classList.contains('scrub-marker')) return;
+        ev.preventDefault();
         scrubCurrentT = rawTimeFromEvent(ev);
         sequencer.sampleAt(scrubId, scrubCurrentT);
         updatePlayheadAndTime();
-        strip.setPointerCapture(ev.pointerId);
         const onMove = (e) => {
             scrubCurrentT = rawTimeFromEvent(e);
             sequencer.sampleAt(scrubId, scrubCurrentT);
             updatePlayheadAndTime();
         };
         const onUp = () => {
-            strip.removeEventListener('pointermove', onMove);
-            strip.removeEventListener('pointerup', onUp);
-            strip.removeEventListener('pointercancel', onUp);
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
         };
-        strip.addEventListener('pointermove', onMove);
-        strip.addEventListener('pointerup', onUp);
-        strip.addEventListener('pointercancel', onUp);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onUp);
     });
     strip.addEventListener('dblclick', (ev) => {
         if (ev.target.classList.contains('scrub-marker')) return;
@@ -335,52 +626,83 @@ function wireScrubStrip(seq, duration) {
         });
     });
 
-    // Marker: click selects (+ gizmo attach); drag moves the kf.
+    // Marker: select-on-down (immediate feedback), drag moves the kf, gizmo attaches on release.
     strip.querySelectorAll('.scrub-marker').forEach(marker => {
         marker.addEventListener('pointerdown', (ev) => {
             ev.stopPropagation();
             ev.preventDefault();
-            const originalT = parseFloat(marker.dataset.t);
+            const seqSnap = sequencer.getSequence(scrubId);
+            const clickedIdx = parseInt(marker.dataset.idx, 10);
+            const clickedKf = seqSnap.keyframes[clickedIdx];
+            if (!clickedKf) return;
+            const originalT = clickedKf.t;
             let currentT = originalT;
-            marker.setPointerCapture(ev.pointerId);
-            marker.classList.add('dragging');
-            // Detach gizmo during drag so preview updates flow through sampleAt (which bypasses
-            // the write-back listener) — otherwise mid-drag intermediate poses corrupt the kf.
+            let moved = false;
+
+            // Neighbor bounds (from the pre-drag snapshot; Shift bypasses).
+            const prevKf = clickedIdx > 0 ? seqSnap.keyframes[clickedIdx - 1] : null;
+            const nextKf = clickedIdx < seqSnap.keyframes.length - 1 ? seqSnap.keyframes[clickedIdx + 1] : null;
+
+            // Select immediately (visual + edit panel). No gizmo yet — gizmo attaches on release
+            // so intermediate drag poses don't flow through the write-back listener.
             scrubDetachGizmo();
+            scrubSelectedKf = clickedKf;
+            scrubSelectedT = originalT;
+            renderScrubBar();
+            const freshStrip = scrubBarEl.querySelector('.scrub-strip');
+            // Look up by data-idx so duplicate-t markers are disambiguated.
+            const freshMarkerIdx = sequencer.getSequence(scrubId).keyframes.indexOf(clickedKf);
+            const freshMarker = freshStrip && freshStrip.querySelector(`.scrub-marker[data-idx="${freshMarkerIdx}"]`);
+            if (freshMarker) freshMarker.classList.add('dragging');
+            const stripRect = (freshStrip || strip).getBoundingClientRect();
+
+            const rawT = (e) => {
+                const x = Math.max(0, Math.min(e.clientX - stripRect.left, stripRect.width));
+                return (x / stripRect.width) * duration;
+            };
+            const clampNeighbors = (t) => {
+                if (prevKf) t = Math.max(t, prevKf.t + SCRUB_SNAP);
+                if (nextKf) t = Math.min(t, nextKf.t - SCRUB_SNAP);
+                return t;
+            };
 
             const onMove = (e) => {
-                currentT = timeFromEvent(e);
-                marker.style.left = `${(currentT / duration) * 100}%`;
+                if (!moved) showScrubDragHint();
+                moved = true;
+                let t = rawT(e);
+                if (!e.shiftKey) {
+                    t = snapT(t, false);
+                    t = clampNeighbors(t);
+                }
+                currentT = Math.max(0, t);
+                if (freshMarker) freshMarker.style.left = `${(currentT / duration) * 100}%`;
                 scrubCurrentT = currentT;
                 sequencer.sampleAt(scrubId, currentT);
                 updatePlayheadAndTime();
             };
             const onUp = () => {
-                marker.removeEventListener('pointermove', onMove);
-                marker.removeEventListener('pointerup', onUp);
-                marker.removeEventListener('pointercancel', onUp);
-                marker.classList.remove('dragging');
-                scrubSelectedT = currentT;
-                if (Math.abs(currentT - originalT) > 0.001) {
-                    // setKeyframeTime → seq:update → re-render. Attach gizmo after render.
-                    sequencer.setKeyframeTime(scrubId, originalT, currentT);
-                    queueMicrotask(() => {
-                        const fresh = sequencer.getSequence(scrubId);
-                        const kf = fresh && findKfByT(fresh, currentT);
-                        if (kf) scrubAttachGizmoTo(fresh, kf);
-                    });
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
+                hideScrubDragHint();
+                if (freshMarker) freshMarker.classList.remove('dragging');
+                // Ref-based so duplicate-t kfs don't get swapped.
+                if (moved && Math.abs(currentT - originalT) > 0.001) {
+                    sequencer.setKeyframeTimeRef(scrubId, clickedKf, currentT);
+                    scrubSelectedKf = clickedKf;
+                    scrubSelectedT = currentT;
+                    queueMicrotask(() => scrubAttachGizmoTo(sequencer.getSequence(scrubId), clickedKf));
                 } else {
-                    // Pure click: preview + re-render + attach gizmo.
+                    // Pure click: preview + attach gizmo to the exact clicked kf.
                     sequencer.sampleAt(scrubId, originalT);
-                    renderScrubBar();
-                    const fresh = sequencer.getSequence(scrubId);
-                    const kf = fresh && findKfByT(fresh, originalT);
-                    if (kf) scrubAttachGizmoTo(fresh, kf);
+                    scrubSelectedKf = clickedKf;
+                    scrubSelectedT = originalT;
+                    scrubAttachGizmoTo(sequencer.getSequence(scrubId), clickedKf);
                 }
             };
-            marker.addEventListener('pointermove', onMove);
-            marker.addEventListener('pointerup', onUp);
-            marker.addEventListener('pointercancel', onUp);
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
         });
     });
 }
@@ -405,34 +727,33 @@ function applySnapshotToRegistry(snapshot, target) {
     try {
         if (target === 'liveCamera' && snapshot.liveCamera) {
             const c = snapshot.liveCamera;
-            registry.updateLiveCamera({
-                position: [...c.position],
-                rotation: [...c.rotation],
-                fov: c.fov
-            });
+            const patch = {};
+            if (Array.isArray(c.position)) patch.position = [...c.position];
+            if (Array.isArray(c.rotation)) patch.rotation = [...c.rotation];
+            if (typeof c.fov === 'number') patch.fov = c.fov;
+            if (Object.keys(patch).length) registry.updateLiveCamera(patch);
         } else if (target.startsWith('light:')) {
             const id = target.slice('light:'.length);
             const v = snapshot.lights?.[id];
             const cur = registry.getLight(id)?.spec;
             if (v && cur) {
-                registry.updateLight(id, {
-                    intensity: v.intensity,
-                    color: v.color,
-                    position: [...v.position],
-                    target: [...v.target],
-                    // Merge to keep untracked extras (decay, groundColor, …) intact.
-                    extras: { ...(cur.extras || {}), ...(v.extras || {}) }
-                });
+                const patch = {};
+                if (typeof v.intensity === 'number') patch.intensity = v.intensity;
+                if (v.color) patch.color = v.color;
+                if (Array.isArray(v.position)) patch.position = [...v.position];
+                if (Array.isArray(v.target)) patch.target = [...v.target];
+                if (v.extras) patch.extras = { ...(cur.extras || {}), ...v.extras };
+                if (Object.keys(patch).length) registry.updateLight(id, patch);
             }
         } else if (target.startsWith('slot:')) {
             const id = target.slice('slot:'.length);
             const v = snapshot.slots?.[id];
             if (v) {
-                registry.updateSlot(id, {
-                    position: [...v.position],
-                    rotation: [...v.rotation],
-                    scale: [...v.scale]
-                });
+                const patch = {};
+                if (Array.isArray(v.position)) patch.position = [...v.position];
+                if (Array.isArray(v.rotation)) patch.rotation = [...v.rotation];
+                if (Array.isArray(v.scale)) patch.scale = [...v.scale];
+                if (Object.keys(patch).length) registry.updateSlot(id, patch);
             }
         }
     } finally {
@@ -461,7 +782,7 @@ registry.addEventListener('change', (e) => {
         if (!matches) continue;
 
         const fresh = captureSnapshot([target]);
-        sequencer.updateKeyframe(seq.id, active.kf.t, (snap) => {
+        sequencer.updateKeyframeRef(seq.id, active.kf, (snap) => {
             if (target === 'liveCamera') {
                 snap.liveCamera = fresh.liveCamera;
             } else if (target.startsWith('light:')) {
@@ -508,28 +829,25 @@ function findPrevKf(seq, kf) {
     return idx > 0 ? seq.keyframes[idx - 1] : null;
 }
 
-function kfKey(seqId, t) { return `${seqId}@${t.toFixed(3)}`; }
-
-function selectKeyframePreview(seq, kf, key) {
-    // Preview is exclusive per sequence.
+function selectKeyframePreview(seq, kf) {
+    // Preview is exclusive per sequence — drop any other kf refs of THIS sequence.
     for (const other of seq.keyframes) {
-        const k = kfKey(seq.id, other.t);
-        if (k !== key) expandedKeyframes.delete(k);
+        if (other !== kf) expandedKeyframes.delete(other);
     }
     // Anchor is captured once and preserved across keyframe switches in the same sequence.
     if (!previewAnchors.has(seq.id)) {
         previewAnchors.set(seq.id, captureSnapshot(seq.targets));
     }
-    expandedKeyframes.add(key);
+    expandedKeyframes.add(kf);
     applySnapshotToRegistry(kf.snapshot, seq.targets[0]);
-    activePreview.set(seq.id, { kf, key });
+    activePreview.set(seq.id, { kf });
     showPath(seq, kf, findPrevKf(seq, kf));
     // selectTarget last so TransformControls' attach event sees the object already posed.
     selectTarget(seq.targets[0]);
 }
 
-function deselectKeyframePreview(seq, key) {
-    expandedKeyframes.delete(key);
+function deselectKeyframePreview(seq, kf) {
+    expandedKeyframes.delete(kf);
     // Clear active BEFORE the restore writes so registry events don't write back into the kf.
     activePreview.delete(seq.id);
     hidePath(seq.id);
@@ -587,9 +905,11 @@ function arraysDiffer(a, b, eps = DIFF_EPS) {
     return a.some((v, i) => Math.abs(v - b[i]) > eps);
 }
 function fmtVec(v, digits = 1) {
+    if (!Array.isArray(v)) return '(—)';
     return `(${v.map(x => x.toFixed(digits)).join(',')})`;
 }
 function fmtVecDeg(v) {
+    if (!Array.isArray(v)) return '(—)°';
     return `(${v.map(x => (x * RAD2DEG).toFixed(0)).join(',')})°`;
 }
 
@@ -633,25 +953,40 @@ function diffSummary(seq, kf, prevKf) {
     return parts.length ? parts.join(' · ') : t('animations.noChange');
 }
 
+function propRow(trackKey, inner) {
+    return `
+        <div class="kf-prop-row" data-track-key="${trackKey}">
+            ${inner}
+            <button class="kf-prop-delete" title="${t('animations.deletePropTitle')}">×</button>
+        </div>
+    `;
+}
+
 function liveCameraSection(kf) {
     const c = kf.snapshot.liveCamera;
     if (!c) return '';
     return `
         <div class="kf-section">
             <div class="kf-section-title">${t('cameras.live')}</div>
-            <label>${t('cameras.position')}
-                <input type="number" step="0.1" value="${c.position[0]}" data-path="liveCamera.position.0">
-                <input type="number" step="0.1" value="${c.position[1]}" data-path="liveCamera.position.1">
-                <input type="number" step="0.1" value="${c.position[2]}" data-path="liveCamera.position.2">
-            </label>
-            <label>${t('cameras.rotationDeg')}
-                <input type="number" step="1" value="${(c.rotation[0] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.0" data-deg>
-                <input type="number" step="1" value="${(c.rotation[1] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.1" data-deg>
-                <input type="number" step="1" value="${(c.rotation[2] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.2" data-deg>
-            </label>
-            <label>${t('cameras.fov')}
-                <input type="number" step="1" min="10" max="120" value="${c.fov}" data-path="liveCamera.fov">
-            </label>
+            ${propRow('liveCamera.position', `
+                <label>${t('cameras.position')}
+                    <input type="number" step="0.1" value="${c.position[0]}" data-path="liveCamera.position.0">
+                    <input type="number" step="0.1" value="${c.position[1]}" data-path="liveCamera.position.1">
+                    <input type="number" step="0.1" value="${c.position[2]}" data-path="liveCamera.position.2">
+                </label>
+            `)}
+            ${propRow('liveCamera.rotation', `
+                <label>${t('cameras.rotationDeg')}
+                    <input type="number" step="1" value="${(c.rotation[0] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.0" data-deg>
+                    <input type="number" step="1" value="${(c.rotation[1] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.1" data-deg>
+                    <input type="number" step="1" value="${(c.rotation[2] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.2" data-deg>
+                </label>
+            `)}
+            ${propRow('liveCamera.fov', `
+                <label>${t('cameras.fov')}
+                    <input type="number" step="1" min="10" max="120" value="${c.fov}" data-path="liveCamera.fov">
+                </label>
+            `)}
         </div>
     `;
 }
@@ -664,33 +999,46 @@ function lightSection(kf, lightId) {
     const isAmbient = spec?.type === 'Ambient';
     const isSpot = spec?.type === 'Spot';
     const showPos = !isAmbient;
+    const tk = (prop) => `light:${lightId}.${prop}`;
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_LIGHT} ${label} <span class="muted">(${lightId})</span></div>
-            <label>${t('lights.intensity')}
-                <input type="number" step="1" min="0" value="${l.intensity}" data-path="lights.${lightId}.intensity">
-            </label>
-            <label>${t('lights.color')}
-                <input type="color" value="${colorToHex(l.color)}" data-path="lights.${lightId}.color">
-            </label>
+            ${propRow(tk('intensity'), `
+                <label>${t('lights.intensity')}
+                    <input type="number" step="1" min="0" value="${l.intensity}" data-path="lights.${lightId}.intensity">
+                </label>
+            `)}
+            ${propRow(tk('color'), `
+                <label>${t('lights.color')}
+                    <input type="color" value="${colorToHex(l.color)}" data-path="lights.${lightId}.color">
+                </label>
+            `)}
             ${showPos ? `
-            <label>${t('cameras.position')}
-                <input type="number" step="0.1" value="${l.position[0]}" data-path="lights.${lightId}.position.0">
-                <input type="number" step="0.1" value="${l.position[1]}" data-path="lights.${lightId}.position.1">
-                <input type="number" step="0.1" value="${l.position[2]}" data-path="lights.${lightId}.position.2">
-            </label>
-            <label>${t('lights.target')}
-                <input type="number" step="0.1" value="${l.target[0]}" data-path="lights.${lightId}.target.0">
-                <input type="number" step="0.1" value="${l.target[1]}" data-path="lights.${lightId}.target.1">
-                <input type="number" step="0.1" value="${l.target[2]}" data-path="lights.${lightId}.target.2">
-            </label>` : ''}
+                ${propRow(tk('position'), `
+                    <label>${t('cameras.position')}
+                        <input type="number" step="0.1" value="${l.position[0]}" data-path="lights.${lightId}.position.0">
+                        <input type="number" step="0.1" value="${l.position[1]}" data-path="lights.${lightId}.position.1">
+                        <input type="number" step="0.1" value="${l.position[2]}" data-path="lights.${lightId}.position.2">
+                    </label>
+                `)}
+                ${propRow(tk('target'), `
+                    <label>${t('lights.target')}
+                        <input type="number" step="0.1" value="${l.target[0]}" data-path="lights.${lightId}.target.0">
+                        <input type="number" step="0.1" value="${l.target[1]}" data-path="lights.${lightId}.target.1">
+                        <input type="number" step="0.1" value="${l.target[2]}" data-path="lights.${lightId}.target.2">
+                    </label>
+                `)}
+            ` : ''}
             ${isSpot ? `
-            <label>${t('lights.angle')}°
-                <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
-            </label>
-            <label>${t('lights.penumbra')}
-                <input type="number" step="0.05" min="0" max="1" value="${l.extras?.penumbra ?? 0}" data-path="lights.${lightId}.extras.penumbra">
-            </label>` : ''}
+                ${propRow(tk('extras'), `
+                    <label>${t('lights.angle')}°
+                        <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
+                    </label>
+                    <label>${t('lights.penumbra')}
+                        <input type="number" step="0.05" min="0" max="1" value="${l.extras?.penumbra ?? 0}" data-path="lights.${lightId}.extras.penumbra">
+                    </label>
+                `)}
+            ` : ''}
         </div>
     `;
 }
@@ -700,24 +1048,31 @@ function slotSection(kf, slotId) {
     if (!s) return '';
     const spec = registry.getSlot(slotId);
     const label = spec?.label || slotId;
+    const tk = (prop) => `slot:${slotId}.${prop}`;
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_SLOT} ${label} <span class="muted">(${slotId})</span></div>
-            <label>${t('characters.position')}
-                <input type="number" step="0.1" value="${s.position[0]}" data-path="slots.${slotId}.position.0">
-                <input type="number" step="0.1" value="${s.position[1]}" data-path="slots.${slotId}.position.1">
-                <input type="number" step="0.1" value="${s.position[2]}" data-path="slots.${slotId}.position.2">
-            </label>
-            <label>${t('characters.rotation')}°
-                <input type="number" step="1" value="${(s.rotation[0] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.0" data-deg>
-                <input type="number" step="1" value="${(s.rotation[1] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.1" data-deg>
-                <input type="number" step="1" value="${(s.rotation[2] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.2" data-deg>
-            </label>
-            <label>${t('characters.scale')}
-                <input type="number" step="0.05" value="${s.scale[0]}" data-path="slots.${slotId}.scale.0">
-                <input type="number" step="0.05" value="${s.scale[1]}" data-path="slots.${slotId}.scale.1">
-                <input type="number" step="0.05" value="${s.scale[2]}" data-path="slots.${slotId}.scale.2">
-            </label>
+            ${propRow(tk('position'), `
+                <label>${t('characters.position')}
+                    <input type="number" step="0.1" value="${s.position[0]}" data-path="slots.${slotId}.position.0">
+                    <input type="number" step="0.1" value="${s.position[1]}" data-path="slots.${slotId}.position.1">
+                    <input type="number" step="0.1" value="${s.position[2]}" data-path="slots.${slotId}.position.2">
+                </label>
+            `)}
+            ${propRow(tk('rotation'), `
+                <label>${t('characters.rotation')}°
+                    <input type="number" step="1" value="${(s.rotation[0] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.0" data-deg>
+                    <input type="number" step="1" value="${(s.rotation[1] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.1" data-deg>
+                    <input type="number" step="1" value="${(s.rotation[2] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.2" data-deg>
+                </label>
+            `)}
+            ${propRow(tk('scale'), `
+                <label>${t('characters.scale')}
+                    <input type="number" step="0.05" value="${s.scale[0]}" data-path="slots.${slotId}.scale.0">
+                    <input type="number" step="0.05" value="${s.scale[1]}" data-path="slots.${slotId}.scale.1">
+                    <input type="number" step="0.05" value="${s.scale[2]}" data-path="slots.${slotId}.scale.2">
+                </label>
+            `)}
         </div>
     `;
 }
@@ -760,11 +1115,21 @@ function bindDetailInputs(container, seq, kf) {
             }
         };
     });
+    // Per-property delete: removes just this track's entry at this kf's t.
+    container.querySelectorAll('.kf-prop-delete').forEach(btn => {
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const row = btn.closest('.kf-prop-row');
+            const trackKey = row?.dataset.trackKey;
+            if (!trackKey) return;
+            sequencer.removeTrackEntry(seq.id, trackKey, kf.t);
+            renderAnimationsPanel();
+        };
+    });
 }
 
 function keyframeRow(seq, kf, prevKf) {
-    const key = kfKey(seq.id, kf.t);
-    const isOpen = expandedKeyframes.has(key);
+    const isOpen = expandedKeyframes.has(kf);
 
     const row = document.createElement('div');
     row.className = 'kf-row' + (isOpen ? ' open' : '');
@@ -786,13 +1151,13 @@ function keyframeRow(seq, kf, prevKf) {
     if (isOpen) {
         row.querySelector('.kf-head').onclick = (e) => {
             if (e.target.closest('input, button')) return;
-            deselectKeyframePreview(seq, key);
+            deselectKeyframePreview(seq, kf);
             renderAnimationsPanel();
         };
     } else {
         row.onclick = (e) => {
             if (e.target.closest('input, button')) return;
-            selectKeyframePreview(seq, kf, key);
+            selectKeyframePreview(seq, kf);
             renderAnimationsPanel();
         };
     }
@@ -800,13 +1165,8 @@ function keyframeRow(seq, kf, prevKf) {
     row.querySelector('.kf-time').onchange = (e) => {
         const newT = parseFloat(e.target.value);
         if (Number.isNaN(newT)) return;
-        const oldKey = kfKey(seq.id, kf.t);
-        const wasOpen = expandedKeyframes.has(oldKey);
-        if (wasOpen) {
-            expandedKeyframes.delete(oldKey);
-            expandedKeyframes.add(kfKey(seq.id, newT));
-        }
-        sequencer.setKeyframeTime(seq.id, kf.t, newT);
+        // Ref-based so duplicate-t kfs don't get swapped.
+        sequencer.setKeyframeTimeRef(seq.id, kf, newT);
         renderAnimationsPanel();
     };
 
@@ -818,8 +1178,8 @@ function keyframeRow(seq, kf, prevKf) {
 
     row.querySelector('.kf-delete').onclick = () => {
         // Restore the anchor before deleting so the scene doesn't get stuck on a removed kf.
-        if (expandedKeyframes.has(key)) deselectKeyframePreview(seq, key);
-        sequencer.removeKeyframe(seq.id, kf.t);
+        if (expandedKeyframes.has(kf)) deselectKeyframePreview(seq, kf);
+        sequencer.removeKeyframeRef(seq.id, kf);
         renderAnimationsPanel();
     };
 
