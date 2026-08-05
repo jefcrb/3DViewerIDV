@@ -690,6 +690,18 @@ class Sequencer extends EventTarget {
         return out;
     }
 
+    // Retime a single property's keyframe. Leaves other properties intact.
+    setTrackEntryTime(seqId, trackKey, oldT, newT) {
+        const seq = this.sequences.get(seqId);
+        if (!seq || !seq.tracks[trackKey]) return;
+        const entry = seq.tracks[trackKey].find(e => sameT(e.t, oldT));
+        if (!entry) return;
+        entry.t = roundT(Math.max(0, newT));
+        seq.tracks[trackKey].sort((a, b) => a.t - b.t);
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
     // Remove a single property's keyframe at time t. Leaves other properties intact.
     removeTrackEntry(seqId, trackKey, t) {
         const seq = this.sequences.get(seqId);
