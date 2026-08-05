@@ -11,7 +11,7 @@ export async function setupRenderer(canvas, rendererType = 'webgl') {
         await renderer.init();
     } else {
         console.log('Initializing WebGL Renderer');
-        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     }
 
     renderer.setSize(window.innerWidth, window.innerHeight);

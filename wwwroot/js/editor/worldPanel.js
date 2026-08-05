@@ -1,20 +1,51 @@
 import { registry } from './registry.js';
-import { SHADOW_MAP_TYPES, TONE_MAPPING_TYPES } from './registry.js';
+import { SHADOW_MAP_TYPES, TONE_MAPPING_TYPES, SKYBOX_MAPPINGS } from './registry.js';
 import { t } from '../i18n.js';
 
 const SHADOW_MAP_SIZES = [256, 512, 1024, 2048, 4096];
+
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+    });
+}
 
 export function renderWorldPanel() {
     const pane = document.querySelector('.tab-pane[data-tab="world"]');
     if (!pane) return;
     const w = registry.world;
+    const hasImage = !!w.skyboxImage;
+    const transparent = !!w.transparentBackground;
+    const disAttr = transparent ? 'disabled' : '';
     pane.innerHTML = `
         <div class="editor-row">
-            <div class="row-head"><strong>${t('world.background')}</strong></div>
+            <div class="row-head"><strong>${t('world.skybox')}</strong></div>
             <div class="row-body">
+                <label><input type="checkbox" id="worldTransparentBg" ${transparent ? 'checked' : ''}> ${t('world.transparent')}</label>
                 <label>${t('world.skyboxColor')}
-                    <input type="color" id="worldBgColor" value="${w.backgroundColor}">
+                    <input type="color" id="worldBgColor" value="${w.backgroundColor}" ${(hasImage || transparent) ? 'disabled' : ''}>
                 </label>
+                <div class="skybox-image">
+                    <div class="skybox-image-actions">
+                        <button type="button" class="btn" id="worldSkyboxUpload" ${disAttr}>${hasImage ? t('world.replaceImage') : t('world.uploadImage')}</button>
+                        <button type="button" class="btn" id="worldSkyboxClear" ${(hasImage && !transparent) ? '' : 'disabled'}>${t('world.clearImage')}</button>
+                        <input type="file" id="worldSkyboxFile" accept="image/*" hidden>
+                    </div>
+                    ${hasImage ? `<img class="skybox-preview" src="${w.skyboxImage}" alt="skybox preview">` : ''}
+                    ${hasImage ? `
+                        <label>${t('world.skyboxMapping')}
+                            <select id="worldSkyboxMapping" ${disAttr}>
+                                ${Object.keys(SKYBOX_MAPPINGS).map(name =>
+                                    `<option value="${name}" ${name === w.skyboxMapping ? 'selected' : ''}>${name}</option>`
+                                ).join('')}
+                            </select>
+                        </label>
+                    ` : ''}
+                    <div class="hint">${transparent ? t('world.transparentHint') : t('world.imageOverridesColor')}</div>
+                </div>
             </div>
         </div>
         <div class="editor-row">
@@ -78,9 +109,38 @@ export function renderWorldPanel() {
         </div>
     `;
 
+    pane.querySelector('#worldTransparentBg').onchange = (e) => {
+        registry.updateWorld({ transparentBackground: e.target.checked });
+        renderWorldPanel();
+    };
     pane.querySelector('#worldBgColor').oninput = (e) => {
         registry.updateWorld({ backgroundColor: e.target.value });
     };
+
+    const fileInput = pane.querySelector('#worldSkyboxFile');
+    pane.querySelector('#worldSkyboxUpload').onclick = () => fileInput.click();
+    fileInput.onchange = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = ''; // allow re-selecting the same file later
+        if (!file) return;
+        if (file.size > 10 * 1024 * 1024) {
+            alert(t('world.imageTooLarge'));
+            return;
+        }
+        try {
+            const dataUrl = await readFileAsDataURL(file);
+            registry.updateWorld({ skyboxImage: dataUrl });
+            renderWorldPanel();
+        } catch (err) {
+            console.error('Failed to read skybox image:', err);
+        }
+    };
+    pane.querySelector('#worldSkyboxClear').onclick = () => {
+        registry.updateWorld({ skyboxImage: null });
+        renderWorldPanel();
+    };
+    const mappingSel = pane.querySelector('#worldSkyboxMapping');
+    if (mappingSel) mappingSel.onchange = (e) => registry.updateWorld({ skyboxMapping: e.target.value });
     pane.querySelector('#worldShadowsEnabled').onchange = (e) => {
         registry.updateWorld({ shadowsEnabled: e.target.checked });
     };

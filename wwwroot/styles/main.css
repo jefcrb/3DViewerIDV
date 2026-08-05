@@ -6,6 +6,9 @@ html, body {
     overflow: hidden;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
 }
+html.transparent-bg, html.transparent-bg body {
+    background: transparent;
+}
 
 #renderCanvas {
     width: 100%;
@@ -566,6 +569,33 @@ html, body {
     font-variant-numeric: tabular-nums;
     min-width: 36px;
     text-align: right;
+}
+
+.skybox-image {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+.skybox-image-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.skybox-preview {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 160px;
+    object-fit: contain;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    background: #0d0d0d;
+}
+.row-body .hint {
+    color: #8a8a8a;
+    font-size: 10px;
+    line-height: 1.4;
 }
 
 .add-bar {
