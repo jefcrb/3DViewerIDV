@@ -3,14 +3,13 @@ import { clipManager } from '../animation/clips.js';
 import { listKnownEvents, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
 import { registry, intToHex } from './registry.js';
 import { selectTarget } from './editorMode.js';
+import { getEditorCameraRef } from './cameraPanel.js';
 import { showPath, hidePath } from './pathPreview.js';
 import { t } from '../i18n.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
 
-// Per-track pip colors — used by the timeline strip to show which properties have
-// a keyframe at each unified marker.
 const PROP_COLORS = {
     position: '#4a9eff',
     rotation: '#4ade80',
@@ -39,7 +38,16 @@ let scrubCurrentT = 0;       // playhead time
 let scrubPlayRafId = null;   // RAF id while the playhead follows a running sequence
 let scrubGizmoOn = false;    // whether we've attached the gizmo/preview to a kf
 
+let scrubSelectedTrackEntry = null;  // { trackKey, t } | null
+let scrubClipboard = null;           // { trackKey, value, easing } | null
+
 const SCRUB_SNAP = 0.1;
+// Prevents fresh/short sequences from collapsing to a hairline strip.
+const MIN_DISPLAY_DURATION = 5;
+function scrubDisplayDuration(seq) {
+    const actual = sequencer.effectiveDuration(seq);
+    return Math.max(actual, MIN_DISPLAY_DURATION);
+}
 function snapT(t, shift) {
     if (shift) return Math.max(0, t);
     return Math.max(0, Math.round(t / SCRUB_SNAP) * SCRUB_SNAP);
@@ -62,16 +70,12 @@ function openScrubBar(id) {
     sequencer.addEventListener('seq:play', onScrubSeqPlay);
     sequencer.addEventListener('seq:stop', onScrubSeqStop);
     document.addEventListener('keydown', onScrubKeyDown);
-
-    // Auto-select the first keyframe so the editor opens with something focused.
-    const openedSeq = sequencer.getSequence(id);
-    if (openedSeq && openedSeq.keyframes.length > 0) {
-        scrubSelectAndPreview(openedSeq, openedSeq.keyframes[0]);
-    }
 }
 
 function closeScrubBar() {
     if (!scrubBarEl) return;
+    closeScrubContextMenu();
+    closeScrubEasingPicker();
     stopPlayheadFollow();
     scrubDetachGizmo();
     scrubBarEl.remove();
@@ -97,8 +101,7 @@ function onScrubSeqRemove(e) {
 }
 function onScrubSeqPlay(e) {
     if (e.detail?.id !== scrubId) return;
-    // Detach the gizmo while playing (so it doesn't chase the moving target),
-    // but keep the selection intact so it comes back on pause.
+    // Detach gizmo so it doesn't chase the moving target; selection stays for resume-on-pause.
     scrubDetachGizmo();
     startPlayheadFollow();
     renderScrubBar();
@@ -107,7 +110,6 @@ function onScrubSeqStop(e) {
     if (e.detail?.id !== scrubId) return;
     stopPlayheadFollow();
     renderScrubBar();
-    // Re-attach gizmo to whatever was selected before play started.
     const seq = sequencer.getSequence(scrubId);
     const kf = seq && currentSelectedKf(seq);
     if (kf) scrubAttachGizmoTo(seq, kf);
@@ -121,6 +123,7 @@ function startPlayheadFollow() {
         if (!runner) { stopPlayheadFollow(); return; }
         const seq = sequencer.getSequence(scrubId);
         if (!seq) return;
+        // Playback loops on the ACTUAL duration, not the padded display width.
         const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
         const elapsed = sequencer.now - runner.startTime;
         scrubCurrentT = duration > 0 ? Math.max(0, Math.min(elapsed % duration, duration)) : 0;
@@ -151,10 +154,8 @@ function scrubTogglePlay() {
 }
 
 function scrubAttachGizmoTo(seq, kf) {
-    // Reuses the sidebar's kf-preview mechanism: applies pose, attaches gizmo, wires write-back.
     selectKeyframePreview(seq, kf);
     scrubGizmoOn = true;
-    // Mirror the selection into the vertical sidebar: expand the sequence + scroll into view.
     expandedSequences.add(seq.id);
     renderAnimationsPanel();
     setTimeout(() => {
@@ -193,6 +194,18 @@ function scrubSetPlayhead(t) {
     sequencer.sampleAt(scrubId, scrubCurrentT);
     updatePlayheadAndTime();
 }
+function scrubSnapshotFromEditorCamera() {
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq || seq.targets[0] !== 'liveCamera') return;
+    const cam = getEditorCameraRef();
+    if (!cam) return;
+    const t = scrubCurrentT;
+    sequencer.setTrackEntry(scrubId, 'liveCamera.position', t, [cam.position.x, cam.position.y, cam.position.z]);
+    sequencer.setTrackEntry(scrubId, 'liveCamera.rotation', t, [cam.rotation.x, cam.rotation.y, cam.rotation.z]);
+    sequencer.setTrackEntry(scrubId, 'liveCamera.fov', t, cam.fov);
+    sequencer.sampleAt(scrubId, t);
+}
+
 function scrubAddAtPlayhead() {
     const seq = sequencer.getSequence(scrubId);
     if (!seq) return;
@@ -207,31 +220,214 @@ function scrubAddAtPlayhead() {
     });
 }
 
+let scrubContextMenuEl = null;
+let scrubEasingPickerEl = null;
+
+function closeScrubEasingPicker() {
+    if (scrubEasingPickerEl) { scrubEasingPickerEl.remove(); scrubEasingPickerEl = null; }
+    document.removeEventListener('pointerdown', onScrubEasingPickerDismiss, true);
+    document.removeEventListener('keydown', onScrubEasingPickerKey, true);
+}
+function onScrubEasingPickerDismiss(ev) {
+    if (scrubEasingPickerEl && !scrubEasingPickerEl.contains(ev.target)) closeScrubEasingPicker();
+}
+function onScrubEasingPickerKey(ev) {
+    if (ev.key === 'Escape') closeScrubEasingPicker();
+}
+
+function openScrubEasingPicker(anchorEl, color, currentEasing, onPick) {
+    closeScrubEasingPicker();
+    const menu = document.createElement('div');
+    menu.className = 'scrub-easing-picker';
+    menu.innerHTML = EASING_NAMES.map(name => `
+        <div class="scrub-easing-item${name === currentEasing ? ' selected' : ''}" data-name="${name}">
+            <svg width="60" height="20" viewBox="0 0 60 20">
+                <line x1="0" y1="20" x2="60" y2="20" stroke="#3c3c3c" stroke-width="0.5"/>
+                <path d="${easingPath(name, 60, 20)}" stroke="${color}" stroke-width="1.3" fill="none"/>
+            </svg>
+            <span>${name}</span>
+        </div>
+    `).join('');
+    document.body.appendChild(menu);
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    let px = anchorRect.left;
+    let py = anchorRect.bottom + 4;
+    if (py + menuRect.height > window.innerHeight - 4) py = anchorRect.top - menuRect.height - 4;
+    if (px + menuRect.width > window.innerWidth - 4) px = window.innerWidth - menuRect.width - 4;
+    menu.style.left = `${Math.max(4, px)}px`;
+    menu.style.top = `${Math.max(4, py)}px`;
+    menu.querySelectorAll('.scrub-easing-item').forEach(el => {
+        el.onclick = () => {
+            onPick(el.dataset.name);
+            closeScrubEasingPicker();
+        };
+    });
+    scrubEasingPickerEl = menu;
+    setTimeout(() => {
+        document.addEventListener('pointerdown', onScrubEasingPickerDismiss, true);
+        document.addEventListener('keydown', onScrubEasingPickerKey, true);
+    }, 0);
+}
+
+function closeScrubContextMenu() {
+    if (scrubContextMenuEl) { scrubContextMenuEl.remove(); scrubContextMenuEl = null; }
+    document.removeEventListener('pointerdown', onScrubContextDismiss, true);
+    document.removeEventListener('keydown', onScrubContextKey, true);
+}
+function onScrubContextDismiss(ev) {
+    if (scrubContextMenuEl && !scrubContextMenuEl.contains(ev.target)) closeScrubContextMenu();
+}
+function onScrubContextKey(ev) {
+    if (ev.key === 'Escape') closeScrubContextMenu();
+}
+
+function openScrubContextMenu(x, y, ctx) {
+    closeScrubContextMenu();
+    const { trackKey, clickedT, dotT } = ctx;
+    const targetT = dotT != null ? dotT : clickedT;
+    const canPaste = !!(scrubClipboard && scrubClipboard.trackKey === trackKey);
+
+    const items = [];
+    if (dotT != null) {
+        const seq = sequencer.getSequence(scrubId);
+        const entry = seq?.tracks?.[trackKey]?.find(e => Math.abs(e.t - dotT) < 0.001);
+        const isLocked = !!entry?.locked;
+        items.push({ label: t('animations.ctxCopy'), action: () => {
+            scrubSelectedTrackEntry = { trackKey, t: dotT };
+            copyScrubTrackEntry();
+        }});
+        items.push({ label: isLocked ? t('animations.ctxUnlock') : t('animations.ctxLock'), action: () => {
+            sequencer.setTrackEntryLocked(scrubId, trackKey, dotT, !isLocked);
+        }});
+        items.push({ label: t('animations.ctxDelete'), action: () => {
+            sequencer.removeTrackEntry(scrubId, trackKey, dotT);
+            if (scrubSelectedTrackEntry?.trackKey === trackKey && Math.abs(scrubSelectedTrackEntry.t - dotT) < 0.001) {
+                scrubSelectedTrackEntry = null;
+            }
+        }});
+        if (canPaste) items.push({ label: t('animations.ctxPasteHere'), action: () => {
+            sequencer.setTrackEntry(scrubId, scrubClipboard.trackKey, dotT,
+                scrubClipboard.value, scrubClipboard.easing);
+            scrubSelectedTrackEntry = { trackKey, t: dotT };
+        }});
+    } else {
+        items.push({ label: t('animations.ctxAddHere'), action: () => {
+            sequencer.recordTrackEntry(scrubId, trackKey, targetT);
+            scrubSelectedTrackEntry = { trackKey, t: targetT };
+        }});
+        if (canPaste) items.push({ label: t('animations.ctxPasteHere'), action: () => {
+            sequencer.setTrackEntry(scrubId, scrubClipboard.trackKey, targetT,
+                scrubClipboard.value, scrubClipboard.easing);
+            scrubSelectedTrackEntry = { trackKey, t: targetT };
+        }});
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'scrub-ctx-menu';
+    menu.innerHTML = `
+        <div class="scrub-ctx-header">${trackKey} @ ${targetT.toFixed(2)}s</div>
+        ${items.map((it, i) => `<div class="scrub-ctx-item" data-i="${i}">${it.label}</div>`).join('')}
+    `;
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let px = x, py = y;
+    if (px + rect.width > vw) px = vw - rect.width - 4;
+    if (py + rect.height > vh) py = vh - rect.height - 4;
+    menu.style.left = `${px}px`;
+    menu.style.top = `${py}px`;
+    menu.querySelectorAll('.scrub-ctx-item').forEach(el => {
+        el.onclick = () => {
+            const i = parseInt(el.dataset.i, 10);
+            items[i]?.action();
+            closeScrubContextMenu();
+        };
+    });
+    scrubContextMenuEl = menu;
+    // Defer to avoid the opening pointerdown immediately dismissing the menu.
+    setTimeout(() => {
+        document.addEventListener('pointerdown', onScrubContextDismiss, true);
+        document.addEventListener('keydown', onScrubContextKey, true);
+    }, 0);
+}
+
+function copyScrubTrackEntry() {
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq || !scrubSelectedTrackEntry) return;
+    const { trackKey, t } = scrubSelectedTrackEntry;
+    const entries = seq.tracks?.[trackKey];
+    if (!entries) return;
+    const entry = entries.find(e => Math.abs(e.t - t) < 0.001);
+    if (!entry) return;
+    scrubClipboard = {
+        trackKey,
+        value: JSON.parse(JSON.stringify(entry.value)),
+        easing: entry.easing || 'cubicInOut'
+    };
+}
+
+function pasteScrubTrackEntry() {
+    if (!scrubClipboard) return;
+    const seq = sequencer.getSequence(scrubId);
+    if (!seq) return;
+    sequencer.setTrackEntry(scrubId, scrubClipboard.trackKey, scrubCurrentT,
+        scrubClipboard.value, scrubClipboard.easing);
+    scrubSelectedTrackEntry = { trackKey: scrubClipboard.trackKey, t: scrubCurrentT };
+}
+
+function deleteScrubTrackEntry() {
+    if (!scrubSelectedTrackEntry) return;
+    const { trackKey, t } = scrubSelectedTrackEntry;
+    sequencer.removeTrackEntry(scrubId, trackKey, t);
+    scrubSelectedTrackEntry = null;
+}
+
 function onScrubKeyDown(e) {
     if (!scrubBarEl) return;
     const inInput = !!e.target?.matches?.('input, textarea, select');
-    if (e.key === ' ' && !inInput) {
+    if (inInput) return;
+
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    if (ctrl && (e.key === 'c' || e.key === 'C') && scrubSelectedTrackEntry) {
+        e.preventDefault();
+        copyScrubTrackEntry();
+        return;
+    }
+    if (ctrl && (e.key === 'v' || e.key === 'V') && scrubClipboard) {
+        e.preventDefault();
+        pasteScrubTrackEntry();
+        return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && scrubSelectedTrackEntry) {
+        e.preventDefault();
+        deleteScrubTrackEntry();
+        return;
+    }
+
+    if (e.key === ' ') {
         e.preventDefault();
         scrubTogglePlay();
         return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && !inInput && scrubSelectedT != null) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && scrubSelectedT != null) {
         e.preventDefault();
         scrubDeleteSelected();
         return;
     }
-    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !inInput && scrubSelectedT != null) {
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && scrubSelectedT != null) {
         e.preventDefault();
         const step = e.shiftKey ? 0.5 : 0.05;
         scrubNudgeSelected(e.key === 'ArrowLeft' ? -step : step);
         return;
     }
-    if (e.key === 'Home' && !inInput) {
+    if (e.key === 'Home') {
         e.preventDefault();
         scrubSetPlayhead(0);
         return;
     }
-    if (e.key === 'End' && !inInput) {
+    if (e.key === 'End') {
         e.preventDefault();
         const seq = sequencer.getSequence(scrubId);
         if (seq) scrubSetPlayhead(sequencer.effectiveDuration(seq));
@@ -255,12 +451,39 @@ function hideScrubDragHint() {
     scrubBarEl?.querySelector('.scrub-drag-hint')?.remove();
 }
 
+// Full re-render on every keystroke would yank focus away from the value inputs.
+function captureScrubFocus() {
+    const active = document.activeElement;
+    if (!scrubBarEl?.contains(active) || active.tagName !== 'INPUT') return null;
+    const dataAttrs = [];
+    for (const attr of ['data-i', 'data-extra', 'data-scalar', 'data-t', 'data-path']) {
+        if (active.hasAttribute(attr)) dataAttrs.push(`[${attr}="${active.getAttribute(attr)}"]`);
+    }
+    const cls = (active.className || '').split(/\s+/).filter(Boolean)[0];
+    const parentSel = active.closest('.scrub-inline-selected') ? '.scrub-inline-selected ' : '';
+    return {
+        selector: `${parentSel}input${cls ? '.' + cls : ''}${dataAttrs.join('')}`,
+        start: active.selectionStart,
+        end: active.selectionEnd
+    };
+}
+function restoreScrubFocus(info) {
+    if (!info || !scrubBarEl) return;
+    const el = scrubBarEl.querySelector(info.selector);
+    if (!el) return;
+    el.focus();
+    if (info.start != null && typeof el.setSelectionRange === 'function') {
+        try { el.setSelectionRange(info.start, info.end); } catch (e) { /* not a text input */ }
+    }
+}
+
 function renderScrubBar() {
     if (!scrubBarEl || !scrubId) return;
     const seq = sequencer.getSequence(scrubId);
     if (!seq) { closeScrubBar(); return; }
-    const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
-    // Reconcile selection reference against the current array (survives sort/mutation).
+    const focusInfo = captureScrubFocus();
+    const duration = scrubDisplayDuration(seq);
+    // currentSelectedKf reconciles our ref against the (possibly re-sorted) array.
     const selectedKf = currentSelectedKf(seq);
     if (selectedKf) {
         scrubSelectedKf = selectedKf;
@@ -270,48 +493,40 @@ function renderScrubBar() {
         scrubSelectedT = null;
     }
 
-    const markers = seq.keyframes.map((k, i) => {
-        const left = (k.t / duration) * 100;
-        const isSel = selectedKf === k;
-        const tracks = sequencer.tracksAtTime(seq, k.t);
-        const pips = tracks.map(tk => {
-            const prop = tk.slice(tk.lastIndexOf('.') + 1);
-            const color = PROP_COLORS[prop] || '#a3a3a3';
-            return `<span class="scrub-track-pip" style="background:${color}" title="${tk}"></span>`;
-        }).join('');
-        return `
-            <div class="scrub-marker${isSel ? ' selected' : ''}" data-t="${k.t}" data-idx="${i}" style="left:${left}%">
-                <div class="scrub-marker-diamond"></div>
-                ${pips ? `<div class="scrub-marker-pips">${pips}</div>` : ''}
-            </div>`;
-    }).join('');
-
-    const playheadLeft = Math.max(0, Math.min(scrubCurrentT / duration, 1)) * 100;
     const playing = sequencer.isPlaying(scrubId);
 
+    const isCameraSeq = seq.targets[0] === 'liveCamera';
+    const snapshotBtn = isCameraSeq
+        ? `<button class="scrub-snapshot" title="${t('animations.scrubSnapshotTitle')}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </button>`
+        : '';
     scrubBarEl.innerHTML = `
         <div class="scrub-head">
             <strong>${seq.name}</strong>
             <button class="scrub-play" title="${playing ? t('animations.stopTitle') : t('animations.playTitle')}">${playing ? '■' : '▶'}</button>
             <button class="scrub-add" title="${t('animations.scrubAddTitle')}">+</button>
+            ${snapshotBtn}
             <span class="scrub-time"><span class="scrub-time-cur">${scrubCurrentT.toFixed(2)}</span> / ${duration.toFixed(2)}s</span>
             <button class="scrub-close" title="${t('animations.scrubClose')}">×</button>
         </div>
-        <div class="scrub-strip" title="${t('animations.scrubStripHint')}">
-            <div class="scrub-strip-track"></div>
-            <div class="scrub-playhead" style="left:${playheadLeft}%"></div>
-            ${markers}
-        </div>
-        <div class="scrub-axis"><span>0</span><span>${duration.toFixed(2)}s</span></div>
         ${renderTrackRows(seq, duration, selectedKf)}
-        ${renderScrubEditPanel(seq, selectedKf)}
+        <div class="scrub-axis"><span>0</span><span>${duration.toFixed(2)}s</span></div>
+        ${renderTrackEditPanel(seq)}
     `;
 
     wireScrubStrip(seq, duration);
     wireTrackRows(seq);
     if (selectedKf) wireScrubEditPanel(seq, selectedKf);
+    wireTrackEditPanel(seq);
+    restoreScrubFocus(focusInfo);
     scrubBarEl.querySelector('.scrub-play').onclick = () => scrubTogglePlay();
     scrubBarEl.querySelector('.scrub-add').onclick = () => scrubAddAtPlayhead();
+    const snapBtn = scrubBarEl.querySelector('.scrub-snapshot');
+    if (snapBtn) snapBtn.onclick = () => scrubSnapshotFromEditorCamera();
     scrubBarEl.querySelector('.scrub-close').onclick = () => {
         closeScrubBar();
         renderAnimationsPanel();
@@ -323,11 +538,237 @@ function propOfTrackKey(trackKey) {
     return dot >= 0 ? trackKey.slice(dot + 1) : trackKey;
 }
 
-// Per-track keyframe bars. Each row is one track (property); dots mark that track's entries.
-// Clicking a dot jumps the playhead + selects the containing unified kf.
+const AXIS_LABELS = ['x', 'y', 'z', 'w'];
+
+function renderTrackValueEditor(trackKey, value, locked = false) {
+    if (value == null) return '';
+    const prop = propOfTrackKey(trackKey);
+    const dis = locked ? 'disabled' : '';
+    if (Array.isArray(value)) {
+        const isDeg = prop === 'rotation';
+        const step = prop === 'scale' ? '0.05' : (isDeg ? '0.5' : '0.1');
+        return value.map((v, i) => {
+            // Keep one decimal so typed fractional values (e.g. "45.5") survive the deg↔rad round-trip.
+            const shown = isDeg ? (v * RAD2DEG).toFixed(1) : v.toFixed(2);
+            const degAttr = isDeg ? 'data-deg' : '';
+            const axis = AXIS_LABELS[i] || String(i);
+            return `<label class="scrub-track-val-labeled"><span class="scrub-track-val-axis">${axis}</span><input type="number" class="scrub-track-val-input" data-i="${i}" ${degAttr} step="${step}" value="${shown}" ${dis}></label>`;
+        }).join('');
+    }
+    if (typeof value === 'number') {
+        return `<input type="number" class="scrub-track-val-input" data-scalar step="0.05" value="${value.toFixed(2)}" ${dis}>`;
+    }
+    if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) {
+        return `<input type="color" class="scrub-track-val-input" data-scalar value="${value}" ${dis}>`;
+    }
+    if (typeof value === 'object') {
+        return Object.entries(value)
+            .filter(([, v]) => typeof v === 'number')
+            .map(([k, v]) => `<label class="scrub-track-val-extra"><span>${k}</span><input type="number" class="scrub-track-val-input" data-extra="${k}" step="0.05" value="${v.toFixed(2)}" ${dis}></label>`)
+            .join('');
+    }
+    return `<span class="scrub-track-value muted">${String(value)}</span>`;
+}
+
+function formatTrackValue(trackKey, value) {
+    if (value == null) return '';
+    const prop = propOfTrackKey(trackKey);
+    if (Array.isArray(value)) {
+        if (prop === 'rotation') return value.map(v => `${(v * RAD2DEG).toFixed(0)}°`).join(', ');
+        return value.map(v => v.toFixed(2)).join(', ');
+    }
+    if (typeof value === 'number') return value.toFixed(2);
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+        return Object.entries(value)
+            .filter(([, v]) => v != null)
+            .map(([k, v]) => `${k}:${typeof v === 'number' ? v.toFixed(2) : v}`)
+            .join(' · ');
+    }
+    return String(value);
+}
+
+function selectedTrackEntryObj(seq) {
+    if (!scrubSelectedTrackEntry) return null;
+    const entries = seq.tracks?.[scrubSelectedTrackEntry.trackKey];
+    if (!entries) return null;
+    const idx = entries.findIndex(e => Math.abs(e.t - scrubSelectedTrackEntry.t) < 0.001);
+    if (idx < 0) return null;
+    return { entries, idx, entry: entries[idx], trackKey: scrubSelectedTrackEntry.trackKey };
+}
+
+// Placeholder when nothing is selected keeps the bar's overall height stable.
+function renderTrackEditPanel(seq) {
+    const sel = selectedTrackEntryObj(seq);
+    if (!sel) {
+        return `
+            <div class="scrub-track-panel scrub-track-panel-empty">
+                <div class="scrub-track-panel-empty-hint">${t('animations.scrubEmptyHint')}</div>
+            </div>
+        `;
+    }
+    const { entries, idx, entry, trackKey } = sel;
+    const prev = idx > 0 ? entries[idx - 1] : null;
+    const next = idx < entries.length - 1 ? entries[idx + 1] : null;
+    const prop = propOfTrackKey(trackKey);
+    const color = PROP_COLORS[prop] || '#a3a3a3';
+
+    const clockIcon = `<span class="scrub-t-icon" aria-hidden="true">⏱</span>`;
+
+    const neighborInline = (k) => k ? `
+        <div class="scrub-inline scrub-inline-neighbor" data-t="${k.t}" title="${t('animations.scrubJumpTitle')}">
+            <span class="scrub-diamond" style="background:${color}"></span>
+            <div class="scrub-inline-name-text">${prop}</div>
+            <div class="scrub-inline-t muted">${clockIcon} ${k.t.toFixed(2)}s</div>
+            <div class="scrub-track-value muted">${formatTrackValue(trackKey, k.value)}</div>
+        </div>` : `
+        <div class="scrub-inline scrub-inline-empty">
+            <span class="scrub-diamond scrub-diamond-empty"></span>
+            <div class="scrub-inline-name-text muted">—</div>
+        </div>`;
+
+    const easingBetween = (earlier, later) => {
+        if (!earlier || !later) return `<div class="scrub-inline-easing scrub-inline-easing-empty"></div>`;
+        const dt = (later.t - earlier.t).toFixed(2);
+        const name = earlier.easing || 'cubicInOut';
+        return `
+        <div class="scrub-inline-easing">
+            <button type="button" class="scrub-easing-graph scrub-easing-graph-wide" data-t="${earlier.t}" title="${name} · ${t('animations.easingPickerTitle')}">
+                <svg class="scrub-easing-svg" width="110" height="28" viewBox="0 0 110 28">
+                    <line x1="0" y1="28" x2="110" y2="28" stroke="#3c3c3c" stroke-width="0.6"/>
+                    <line x1="0" y1="0"  x2="0"  y2="28" stroke="#3c3c3c" stroke-width="0.6"/>
+                    <path d="${easingPath(name, 110, 28)}" stroke="${color}" stroke-width="1.4" fill="none"/>
+                </svg>
+            </button>
+            <div class="scrub-inline-dt muted">${dt}s</div>
+        </div>`;
+    };
+
+    const lockedTag = entry.locked ? ` <span class="scrub-locked-tag" title="${t('animations.lockedTitle')}">🔒</span>` : '';
+    const dis = entry.locked ? 'disabled' : '';
+    const selInline = `
+        <div class="scrub-inline scrub-inline-selected${entry.locked ? ' locked' : ''}">
+            <span class="scrub-diamond scrub-diamond-selected" style="background:${color}"></span>
+            <div class="scrub-inline-name-text">${prop}${lockedTag}</div>
+            <div class="scrub-inline-t">
+                ${clockIcon}
+                <input type="number" class="scrub-track-edit-t" step="0.05" min="0" value="${entry.t.toFixed(2)}" ${dis}>s
+            </div>
+            <div class="scrub-track-value-edit">${renderTrackValueEditor(trackKey, entry.value, entry.locked)}</div>
+        </div>`;
+
+    return `
+        <div class="scrub-track-panel scrub-track-panel-filled">
+            <div class="scrub-track-panel-title" title="${trackKey}">
+                <span class="scrub-diamond" style="background:${color};display:inline-block;width:8px;height:8px;transform:rotate(45deg);"></span>
+                ${trackKey}
+            </div>
+            <div class="scrub-kf-inline-row">
+                ${neighborInline(prev)}
+                ${easingBetween(prev, entry)}
+                ${selInline}
+                ${easingBetween(entry, next)}
+                ${neighborInline(next)}
+            </div>
+            <div class="scrub-kf-nav-bottom">
+                <button class="scrub-track-nav-prev" ${prev ? '' : 'disabled'} title="${t('animations.scrubGoPrevTitle')}">◀</button>
+                <button class="scrub-track-nav-next" ${next ? '' : 'disabled'} title="${t('animations.scrubGoNextTitle')}">▶</button>
+            </div>
+        </div>
+    `;
+}
+
+function selectTrackEntry(seq, trackKey, t) {
+    selectTrackEntryWithGizmo(seq, trackKey, t);
+}
+
+// Selects a channel entry and attaches TransformControls to the sequence's target so
+// dragging the gizmo writes back into this specific entry (see the registry.change listener).
+function selectTrackEntryWithGizmo(seq, trackKey, t) {
+    scrubSelectedTrackEntry = { trackKey, t };
+    scrubSelectedKf = null;
+    scrubSelectedT = null;
+    scrubDetachGizmo();
+    scrubCurrentT = t;
+    sequencer.sampleAt(scrubId, t);
+    renderScrubBar();
+    const target = seq.targets[0];
+    if (target) selectTarget(target);
+}
+
+function wireTrackEditPanel(seq) {
+    const sel = selectedTrackEntryObj(seq);
+    if (!sel) return;
+    const { entry, entries, idx, trackKey } = sel;
+    const prev = idx > 0 ? entries[idx - 1] : null;
+    const next = idx < entries.length - 1 ? entries[idx + 1] : null;
+
+    const tInput = scrubBarEl.querySelector('.scrub-track-edit-t');
+    if (tInput) {
+        tInput.onchange = () => {
+            const newT = Math.max(0, parseFloat(tInput.value) || 0);
+            scrubSelectedTrackEntry = { trackKey, t: newT };
+            sequencer.setTrackEntryTime(scrubId, trackKey, entry.t, newT);
+        };
+    }
+    const pickerColor = PROP_COLORS[propOfTrackKey(trackKey)] || '#a3a3a3';
+    scrubBarEl.querySelectorAll('.scrub-easing-graph-wide').forEach(btn => {
+        btn.onclick = () => {
+            const easingT = parseFloat(btn.dataset.t);
+            const cur = seq.tracks[trackKey]?.find(e => Math.abs(e.t - easingT) < 0.001);
+            openScrubEasingPicker(btn, pickerColor, cur?.easing || 'cubicInOut', (name) => {
+                sequencer.setTrackEntryEasing(scrubId, trackKey, easingT, name);
+            });
+        };
+    });
+    scrubBarEl.querySelectorAll('.scrub-inline-neighbor').forEach(el => {
+        el.style.cursor = 'pointer';
+        el.onclick = () => {
+            const nT = parseFloat(el.dataset.t);
+            const target = entries.find(e => Math.abs(e.t - nT) < 0.001);
+            if (target) selectTrackEntry(seq, trackKey, target.t);
+        };
+    });
+    const prevBtn = scrubBarEl.querySelector('.scrub-track-nav-prev');
+    const nextBtn = scrubBarEl.querySelector('.scrub-track-nav-next');
+    if (prevBtn) prevBtn.onclick = () => { if (prev) selectTrackEntry(seq, trackKey, prev.t); };
+    if (nextBtn) nextBtn.onclick = () => { if (next) selectTrackEntry(seq, trackKey, next.t); };
+
+    scrubBarEl.querySelectorAll('.scrub-inline-selected .scrub-track-val-input').forEach(inp => {
+        inp.oninput = () => {
+            const seqNow = sequencer.getSequence(scrubId);
+            const cur = seqNow?.tracks?.[trackKey]?.find(e => Math.abs(e.t - entry.t) < 0.001);
+            if (!cur) return;
+            let nextValue;
+            if (inp.dataset.i != null) {
+                nextValue = Array.isArray(cur.value) ? cur.value.slice() : [0, 0, 0];
+                let raw = parseFloat(inp.value);
+                if (Number.isNaN(raw)) return;
+                if (inp.hasAttribute('data-deg')) raw = raw * DEG2RAD;
+                nextValue[parseInt(inp.dataset.i, 10)] = raw;
+            } else if (inp.dataset.extra != null) {
+                nextValue = { ...(cur.value || {}) };
+                const raw = parseFloat(inp.value);
+                if (Number.isNaN(raw)) return;
+                nextValue[inp.dataset.extra] = raw;
+            } else if (inp.dataset.scalar != null) {
+                if (inp.type === 'color') nextValue = inp.value;
+                else {
+                    const raw = parseFloat(inp.value);
+                    if (Number.isNaN(raw)) return;
+                    nextValue = raw;
+                }
+            } else return;
+            sequencer.setTrackEntryValue(scrubId, trackKey, entry.t, nextValue);
+            sequencer.sampleAt(scrubId, entry.t);
+        };
+    });
+}
+
 function renderTrackRows(seq, duration, selectedKf) {
     if (!seq.tracks) return '';
-    const entries = Object.entries(seq.tracks).filter(([, arr]) => arr.length > 0);
+    // Include empty tracks so channel rows persist after a channel is fully cleared.
+    const entries = Object.entries(seq.tracks);
     if (entries.length === 0) return '';
     const playheadLeft = duration > 0 ? Math.max(0, Math.min(1, scrubCurrentT / duration)) * 100 : 0;
     const rows = entries.map(([trackKey, kfs]) => {
@@ -335,9 +776,25 @@ function renderTrackRows(seq, duration, selectedKf) {
         const color = PROP_COLORS[prop] || '#a3a3a3';
         const dots = kfs.map(e => {
             const left = duration > 0 ? Math.max(0, Math.min(1, e.t / duration)) * 100 : 0;
-            const isSel = selectedKf && Math.abs(selectedKf.t - e.t) < 0.001;
-            return `<div class="scrub-track-dot${isSel ? ' selected' : ''}" data-track="${trackKey}" data-t="${e.t}" style="left:${left}%;background:${color}" title="${trackKey} @ ${e.t.toFixed(2)}s"></div>`;
+            const isTrackSel = scrubSelectedTrackEntry
+                && scrubSelectedTrackEntry.trackKey === trackKey
+                && Math.abs(scrubSelectedTrackEntry.t - e.t) < 0.001;
+            const isLocked = !!e.locked;
+            const cls = `scrub-track-dot${isTrackSel ? ' track-selected' : ''}${isLocked ? ' locked' : ''}`;
+            const titleSuffix = isLocked ? ' · locked' : '';
+            return `<div class="${cls}" data-track="${trackKey}" data-t="${e.t}" style="left:${left}%;background:${color}" title="${trackKey} @ ${e.t.toFixed(2)}s${titleSuffix}"></div>`;
         }).join('');
+        let highlight = '';
+        if (scrubSelectedTrackEntry && scrubSelectedTrackEntry.trackKey === trackKey) {
+            const idx = kfs.findIndex(e => Math.abs(e.t - scrubSelectedTrackEntry.t) < 0.001);
+            if (idx >= 0) {
+                const lo = idx > 0 ? kfs[idx - 1].t : 0;
+                const hi = idx < kfs.length - 1 ? kfs[idx + 1].t : duration;
+                const leftPct = duration > 0 ? Math.max(0, Math.min(1, lo / duration)) * 100 : 0;
+                const widthPct = duration > 0 ? Math.max(0, Math.min(1, (hi - lo) / duration)) * 100 : 0;
+                highlight = `<div class="scrub-track-segment-highlight" style="left:${leftPct}%;width:${widthPct}%;background:${color}"></div>`;
+            }
+        }
         return `
             <div class="scrub-track-row" data-track="${trackKey}">
                 <div class="scrub-track-label" title="${trackKey}">
@@ -345,6 +802,7 @@ function renderTrackRows(seq, duration, selectedKf) {
                     ${prop}
                 </div>
                 <div class="scrub-track-strip">
+                    ${highlight}
                     <div class="scrub-track-playhead" style="left:${playheadLeft}%"></div>
                     ${dots}
                 </div>
@@ -355,25 +813,77 @@ function renderTrackRows(seq, duration, selectedKf) {
 
 function wireTrackRows(seq) {
     if (!scrubBarEl) return;
-    const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
+    const duration = scrubDisplayDuration(seq);
 
     scrubBarEl.querySelectorAll('.scrub-track-row').forEach(row => {
         const trackKey = row.dataset.track;
         const rowStrip = row.querySelector('.scrub-track-strip');
         if (!rowStrip) return;
 
+        rowStrip.addEventListener('pointerdown', (ev) => {
+            if (ev.button !== 0) return;
+            if (ev.target.classList.contains('scrub-track-dot')) return;
+            ev.preventDefault();
+            const rect = rowStrip.getBoundingClientRect();
+            const rawT = (e) => {
+                const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+                return (x / rect.width) * duration;
+            };
+            scrubCurrentT = rawT(ev);
+            sequencer.sampleAt(scrubId, scrubCurrentT);
+            updatePlayheadAndTime();
+            const onMove = (e) => {
+                scrubCurrentT = rawT(e);
+                sequencer.sampleAt(scrubId, scrubCurrentT);
+                updatePlayheadAndTime();
+            };
+            const onUp = () => {
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
+            };
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
+        });
+
+        rowStrip.addEventListener('contextmenu', (ev) => {
+            ev.preventDefault();
+            const rect = rowStrip.getBoundingClientRect();
+            const x = Math.max(0, Math.min(ev.clientX - rect.left, rect.width));
+            const clickedT = snapT((x / rect.width) * duration, ev.shiftKey);
+            const dotEl = ev.target.closest?.('.scrub-track-dot');
+            const dotT = dotEl ? parseFloat(dotEl.dataset.t) : null;
+            openScrubContextMenu(ev.clientX, ev.clientY, {
+                trackKey,
+                clickedT,
+                dotT
+            });
+        });
+
         rowStrip.querySelectorAll('.scrub-track-dot').forEach(dot => {
             dot.addEventListener('pointerdown', (ev) => {
                 ev.stopPropagation();
                 ev.preventDefault();
                 const originalT = parseFloat(dot.dataset.t);
+                const entries = seq.tracks[trackKey] || [];
+                const idx = entries.findIndex(e => Math.abs(e.t - originalT) < 0.001);
+                const clickedEntry = idx >= 0 ? entries[idx] : null;
+                // Locked: click still selects (for copy/unlock/delete via ctx menu), no drag.
+                if (clickedEntry?.locked) {
+                    scrubSelectedTrackEntry = { trackKey, t: originalT };
+                    scrubSelectedKf = null;
+                    scrubSelectedT = null;
+                    scrubDetachGizmo();
+                    scrubCurrentT = originalT;
+                    sequencer.sampleAt(scrubId, originalT);
+                    renderScrubBar();
+                    return;
+                }
                 let currentT = originalT;
                 let moved = false;
                 dot.classList.add('dragging');
 
-                // Neighbor clamp within THIS track only.
-                const entries = seq.tracks[trackKey] || [];
-                const idx = entries.findIndex(e => Math.abs(e.t - originalT) < 0.001);
                 const prevEntry = idx > 0 ? entries[idx - 1] : null;
                 const nextEntry = idx >= 0 && idx < entries.length - 1 ? entries[idx + 1] : null;
 
@@ -411,13 +921,11 @@ function wireTrackRows(seq) {
                     dot.classList.remove('dragging');
                     if (moved && Math.abs(currentT - originalT) > 0.001) {
                         sequencer.setTrackEntryTime(scrubId, trackKey, originalT, currentT);
+                        selectTrackEntryWithGizmo(seq, trackKey, currentT);
                     } else {
-                        // Pure click: sample + select the unified kf at originalT (if one exists).
-                        const kf = seq.keyframes.find(k => Math.abs(k.t - originalT) < 0.001);
-                        if (kf) scrubSelectAndPreview(seq, kf);
-                        else {
-                            scrubSetPlayhead(originalT);
-                        }
+                        scrubCurrentT = originalT;
+                        sequencer.sampleAt(scrubId, originalT);
+                        selectTrackEntryWithGizmo(seq, trackKey, originalT);
                     }
                 };
                 document.addEventListener('pointermove', onMove);
@@ -530,7 +1038,6 @@ function renderScrubEditPanel(seq, kf) {
             ${diffBlock(seq, kf)}
         </div>`;
 
-    // Order: prev (left, natural timeline reading) → selected → next (right).
     return `
         <div class="scrub-kf-inline-row">
             ${neighborInline(prevKf)}
@@ -546,8 +1053,6 @@ function renderScrubEditPanel(seq, kf) {
     `;
 }
 
-// Returns HTML: one .scrub-diff-col per property that changed, showing the total value
-// (from `toKf`) with the property label above. Empty string if nothing changed.
 function renderKfDiff(seq, fromKf, toKf) {
     if (!fromKf) return '';
     const target = seq.targets[0];
@@ -602,6 +1107,7 @@ function scrubSelectAndPreview(seq, kf) {
     scrubDetachGizmo();
     scrubSelectedKf = kf;
     scrubSelectedT = kf.t;
+    scrubSelectedTrackEntry = null;
     scrubCurrentT = kf.t;
     sequencer.sampleAt(scrubId, kf.t);
     renderScrubBar();
@@ -617,7 +1123,6 @@ function wireScrubEditPanel(seq, kf) {
             sequencer.setKeyframeTimeRef(scrubId, kf, newT);
         };
     }
-    // Between-easing dropdowns carry data-idx so they target the specific kf even with duplicate ts.
     scrubBarEl.querySelectorAll('.scrub-between-easing').forEach(sel => {
         sel.onchange = () => {
             const easingIdx = parseInt(sel.dataset.idx, 10);
@@ -634,7 +1139,6 @@ function wireScrubEditPanel(seq, kf) {
     if (nextBtn) nextBtn.onclick = () => { if (nextKf) scrubSelectAndPreview(seq, nextKf); };
     if (prevBtn) prevBtn.onclick = () => { if (prevKf) scrubSelectAndPreview(seq, prevKf); };
 
-    // Click a neighbor to jump-select it. Uses data-idx so duplicate-t kfs are disambiguated.
     scrubBarEl.querySelectorAll('.scrub-inline-neighbor').forEach(el => {
         el.style.cursor = 'pointer';
         el.onclick = () => {
@@ -646,150 +1150,19 @@ function wireScrubEditPanel(seq, kf) {
 }
 
 function wireScrubStrip(seq, duration) {
-    const strip = scrubBarEl.querySelector('.scrub-strip');
-    if (!strip) return;
-
-    // Raw time (unsnapped) from an event's clientX.
-    const rawTimeFromEvent = (ev) => {
-        const rect = strip.getBoundingClientRect();
-        const x = Math.max(0, Math.min(ev.clientX - rect.left, rect.width));
-        return (x / rect.width) * duration;
-    };
-    const timeFromEvent = (ev) => snapT(rawTimeFromEvent(ev), ev.shiftKey);
-
-    // Empty-strip drag: continuous playhead scrub (no snap — smooth preview).
-    // Uses document-level listeners so a mid-drag re-render (e.g. from a seq:stop when
-    // sampleAt clears an active play runner) doesn't orphan the listeners.
-    strip.addEventListener('pointerdown', (ev) => {
-        if (ev.target.classList.contains('scrub-marker')) return;
-        ev.preventDefault();
-        scrubCurrentT = rawTimeFromEvent(ev);
-        sequencer.sampleAt(scrubId, scrubCurrentT);
-        updatePlayheadAndTime();
-        const onMove = (e) => {
-            scrubCurrentT = rawTimeFromEvent(e);
-            sequencer.sampleAt(scrubId, scrubCurrentT);
-            updatePlayheadAndTime();
-        };
-        const onUp = () => {
-            document.removeEventListener('pointermove', onMove);
-            document.removeEventListener('pointerup', onUp);
-            document.removeEventListener('pointercancel', onUp);
-        };
-        document.addEventListener('pointermove', onMove);
-        document.addEventListener('pointerup', onUp);
-        document.addEventListener('pointercancel', onUp);
-    });
-    strip.addEventListener('dblclick', (ev) => {
-        if (ev.target.classList.contains('scrub-marker')) return;
-        const tNew = timeFromEvent(ev);
-        scrubCurrentT = tNew;
-        scrubSelectedT = tNew;
-        sequencer.recordKeyframe(scrubId, tNew);
-        queueMicrotask(() => {
-            const fresh = sequencer.getSequence(scrubId);
-            const kf = fresh && findKfByT(fresh, tNew);
-            if (kf) scrubAttachGizmoTo(fresh, kf);
-        });
-    });
-
-    // Marker: select-on-down (immediate feedback), drag moves the kf, gizmo attaches on release.
-    strip.querySelectorAll('.scrub-marker').forEach(marker => {
-        marker.addEventListener('pointerdown', (ev) => {
-            ev.stopPropagation();
-            ev.preventDefault();
-            const seqSnap = sequencer.getSequence(scrubId);
-            const clickedIdx = parseInt(marker.dataset.idx, 10);
-            const clickedKf = seqSnap.keyframes[clickedIdx];
-            if (!clickedKf) return;
-            const originalT = clickedKf.t;
-            let currentT = originalT;
-            let moved = false;
-
-            // Neighbor bounds (from the pre-drag snapshot; Shift bypasses).
-            const prevKf = clickedIdx > 0 ? seqSnap.keyframes[clickedIdx - 1] : null;
-            const nextKf = clickedIdx < seqSnap.keyframes.length - 1 ? seqSnap.keyframes[clickedIdx + 1] : null;
-
-            // Select immediately (visual + edit panel). No gizmo yet — gizmo attaches on release
-            // so intermediate drag poses don't flow through the write-back listener.
-            scrubDetachGizmo();
-            scrubSelectedKf = clickedKf;
-            scrubSelectedT = originalT;
-            renderScrubBar();
-            const freshStrip = scrubBarEl.querySelector('.scrub-strip');
-            // Look up by data-idx so duplicate-t markers are disambiguated.
-            const freshMarkerIdx = sequencer.getSequence(scrubId).keyframes.indexOf(clickedKf);
-            const freshMarker = freshStrip && freshStrip.querySelector(`.scrub-marker[data-idx="${freshMarkerIdx}"]`);
-            if (freshMarker) freshMarker.classList.add('dragging');
-            const stripRect = (freshStrip || strip).getBoundingClientRect();
-            // All per-track dots at originalT should follow the drag (unified retime).
-            const syncedDots = Array.from(scrubBarEl.querySelectorAll('.scrub-track-dot'))
-                .filter(d => Math.abs(parseFloat(d.dataset.t) - originalT) < 0.001);
-
-            const rawT = (e) => {
-                const x = Math.max(0, Math.min(e.clientX - stripRect.left, stripRect.width));
-                return (x / stripRect.width) * duration;
-            };
-            const clampNeighbors = (t) => {
-                if (prevKf) t = Math.max(t, prevKf.t + SCRUB_SNAP);
-                if (nextKf) t = Math.min(t, nextKf.t - SCRUB_SNAP);
-                return t;
-            };
-
-            const onMove = (e) => {
-                if (!moved) showScrubDragHint();
-                moved = true;
-                let t = rawT(e);
-                if (!e.shiftKey) {
-                    t = snapT(t, false);
-                    t = clampNeighbors(t);
-                }
-                currentT = Math.max(0, t);
-                const leftPct = `${(currentT / duration) * 100}%`;
-                if (freshMarker) freshMarker.style.left = leftPct;
-                syncedDots.forEach(d => { d.style.left = leftPct; });
-                scrubCurrentT = currentT;
-                sequencer.sampleAt(scrubId, currentT);
-                updatePlayheadAndTime();
-            };
-            const onUp = () => {
-                document.removeEventListener('pointermove', onMove);
-                document.removeEventListener('pointerup', onUp);
-                document.removeEventListener('pointercancel', onUp);
-                hideScrubDragHint();
-                if (freshMarker) freshMarker.classList.remove('dragging');
-                // Ref-based so duplicate-t kfs don't get swapped.
-                if (moved && Math.abs(currentT - originalT) > 0.001) {
-                    sequencer.setKeyframeTimeRef(scrubId, clickedKf, currentT);
-                    scrubSelectedKf = clickedKf;
-                    scrubSelectedT = currentT;
-                    queueMicrotask(() => scrubAttachGizmoTo(sequencer.getSequence(scrubId), clickedKf));
-                } else {
-                    // Pure click: preview + attach gizmo to the exact clicked kf.
-                    sequencer.sampleAt(scrubId, originalT);
-                    scrubSelectedKf = clickedKf;
-                    scrubSelectedT = originalT;
-                    scrubAttachGizmoTo(sequencer.getSequence(scrubId), clickedKf);
-                }
-            };
-            document.addEventListener('pointermove', onMove);
-            document.addEventListener('pointerup', onUp);
-            document.addEventListener('pointercancel', onUp);
-        });
-    });
+    // Scrubbing lives on the channel strips now (see wireTrackRows).
 }
 
 function updatePlayheadAndTime() {
     if (!scrubBarEl) return;
     const seq = sequencer.getSequence(scrubId);
     if (!seq) return;
-    const duration = Math.max(sequencer.effectiveDuration(seq), 0.01);
+    const duration = scrubDisplayDuration(seq);
     const leftPct = `${Math.max(0, Math.min(scrubCurrentT / duration, 1)) * 100}%`;
     const ph = scrubBarEl.querySelector('.scrub-playhead');
     const label = scrubBarEl.querySelector('.scrub-time-cur');
     if (ph) ph.style.left = leftPct;
     if (label) label.textContent = scrubCurrentT.toFixed(2);
-    // Sync the per-track playhead lines too.
     scrubBarEl.querySelectorAll('.scrub-track-playhead').forEach(el => { el.style.left = leftPct; });
 }
 
@@ -870,6 +1243,30 @@ registry.addEventListener('change', (e) => {
                 snap.slots[id] = fresh.slots[id];
             }
         });
+    }
+
+    // Per-channel write-back: when a scrub-bar channel entry is selected, gizmo edits
+    // write into just that specific track's entry (not the whole snapshot).
+    if (scrubSelectedTrackEntry && scrubId) {
+        const seq = sequencer.getSequence(scrubId);
+        if (!seq) return;
+        const { trackKey, t } = scrubSelectedTrackEntry;
+        const entry = seq.tracks?.[trackKey]?.find(en => Math.abs(en.t - t) < 0.001);
+        if (!entry || entry.locked) return;
+        const dot = trackKey.lastIndexOf('.');
+        const target = trackKey.slice(0, dot);
+        const prop = trackKey.slice(dot + 1);
+        const matches =
+            (type === 'liveCamera:update' && target === 'liveCamera') ||
+            (type === 'lights:update' && target === `light:${detail.id}`) ||
+            (type === 'slots:update' && target === `slot:${detail.id}`);
+        if (!matches) return;
+        const fresh = captureSnapshot([target]);
+        let value;
+        if (target === 'liveCamera') value = fresh.liveCamera?.[prop];
+        else if (target.startsWith('slot:')) value = fresh.slots?.[target.slice(5)]?.[prop];
+        else if (target.startsWith('light:')) value = fresh.lights?.[target.slice(6)]?.[prop];
+        if (value !== undefined) sequencer.setTrackEntryValue(scrubId, trackKey, t, value);
     }
 });
 
@@ -1408,12 +1805,14 @@ function sequenceRow(spec) {
         row.querySelector('.row-head').onclick = (e) => {
             if (e.target.closest('input, button')) return;
             expandedSequences.delete(spec.id);
+            if (scrubId === spec.id) closeScrubBar();
             renderAnimationsPanel();
         };
     } else {
         row.onclick = (e) => {
             if (e.target.closest('input, button')) return;
             expandedSequences.add(spec.id);
+            openScrubBar(spec.id);
             renderAnimationsPanel();
         };
     }

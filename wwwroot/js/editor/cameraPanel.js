@@ -8,6 +8,10 @@ export function setEditorCameraRef(cam) {
     editorCameraRef = cam;
 }
 
+export function getEditorCameraRef() {
+    return editorCameraRef;
+}
+
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
 

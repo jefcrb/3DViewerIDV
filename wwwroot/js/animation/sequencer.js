@@ -391,7 +391,8 @@ class Sequencer extends EventTarget {
                     .map(e => ({
                         t: roundT(e.t),
                         value: deepClone(e.value),
-                        easing: EASING_NAMES.includes(e.easing) ? e.easing : seqLevelEasing
+                        easing: EASING_NAMES.includes(e.easing) ? e.easing : seqLevelEasing,
+                        locked: !!e.locked
                     }))
                     .sort((a, b) => a.t - b.t);
             }
@@ -436,13 +437,14 @@ class Sequencer extends EventTarget {
             tracks,
             keyframes: [] // populated by _rebuildKeyframes
         };
+        // Seed empty tracks for every property of the sequence's targets so channel rows
+        // always render (even before any keyframes are recorded, and after all are deleted).
+        this._ensureTracksForTargets(normalized);
         this._rebuildKeyframes(normalized);
         this.sequences.set(id, normalized);
         this._emit('seq:add', { id, spec: normalized });
         return id;
     }
-
-    // --- Derived-view maintenance ---
 
     _uniqueTimes(seq) {
         const set = new Set();
@@ -452,9 +454,8 @@ class Sequencer extends EventTarget {
         return [...set].sort((a, b) => a - b);
     }
 
-    // Samples EVERY track at t (interpolating between adjacent entries when needed) so the
-    // synthesized snapshot is always complete — consumers like the sidebar's kf-detail and
-    // applySnapshotToRegistry crash on missing fields.
+    // Sampled per-track so the snapshot is complete even for sparse tracks — callers
+    // (sidebar kf-detail, applySnapshotToRegistry) assume no missing fields.
     _synthesizeSnapshotAt(seq, t) {
         const snap = { lights: {}, slots: {}, liveCamera: null };
         for (const [trackKey, entries] of Object.entries(seq.tracks || {})) {
@@ -483,8 +484,7 @@ class Sequencer extends EventTarget {
         return interpolateTrackValue(propKindOf(trackKey), a.value, b.value, eased);
     }
 
-    // Represents the group as a single easing for the unified UI. Tracks with different
-    // easings at the same t are allowed at the data level; the UI shows a majority-ish pick.
+    // Different tracks at the same t may have different easings; unified UI shows the first one.
     _pickEasingAt(seq, t) {
         for (const entries of Object.values(seq.tracks || {})) {
             const entry = entries.find(e => sameT(e.t, t));
@@ -493,8 +493,8 @@ class Sequencer extends EventTarget {
         return 'cubicInOut';
     }
 
-    // Rebuild seq.keyframes from tracks, preserving object identity for unchanged times
-    // so external code holding kf refs (scrub bar selection, sidebar expansion) survives.
+    // Preserves kf object identity for unchanged times so external refs (scrub-bar selection,
+    // sidebar expansion) survive across mutations.
     _rebuildKeyframes(seq) {
         const existing = Array.isArray(seq.keyframes) ? seq.keyframes : [];
         const byT = new Map();
@@ -556,9 +556,6 @@ class Sequencer extends EventTarget {
         this._emit('seq:update', { id, spec: cur });
     }
 
-    // -- Track mutations at a "unified time T" level --
-
-    // Ensure a track exists for every (target, prop) of the current targets before writing.
     _ensureTracksForTargets(seq) {
         for (const target of seq.targets) {
             for (const prop of propsFor(target)) {
@@ -572,9 +569,14 @@ class Sequencer extends EventTarget {
         const rt = roundT(t);
         const idx = entries.findIndex(e => sameT(e.t, rt));
         if (idx >= 0) {
-            entries[idx] = { t: rt, value: deepClone(value), easing: entries[idx].easing || easing };
+            entries[idx] = {
+                t: rt,
+                value: deepClone(value),
+                easing: entries[idx].easing || easing,
+                locked: !!entries[idx].locked
+            };
         } else {
-            entries.push({ t: rt, value: deepClone(value), easing });
+            entries.push({ t: rt, value: deepClone(value), easing, locked: false });
             entries.sort((a, b) => a.t - b.t);
         }
     }
@@ -594,7 +596,6 @@ class Sequencer extends EventTarget {
         this._emit('seq:update', { id, spec: seq, recordedT: roundT(t) });
     }
 
-    // Propagate a single easing choice across every track entry at time t.
     setKeyframeEasing(seqId, t, easing) {
         const seq = this.sequences.get(seqId);
         if (!seq || !EASING_NAMES.includes(easing)) return;
@@ -611,7 +612,6 @@ class Sequencer extends EventTarget {
     resetTarget(seqId, target) {
         const seq = this.sequences.get(seqId);
         if (!seq) return false;
-        // Read earliest values of this target's tracks and apply via registry.
         const props = propsFor(target);
         const values = {};
         for (const prop of props) {
@@ -620,7 +620,6 @@ class Sequencer extends EventTarget {
             values[prop] = deepClone(entries[0].value);
         }
         if (Object.keys(values).length === 0) return false;
-
         if (this.active.has(seqId)) {
             this.active.delete(seqId);
             this._emit('seq:stop', { id: seqId });
@@ -657,7 +656,6 @@ class Sequencer extends EventTarget {
         return false;
     }
 
-    // Duplicate a unified kf at time t into a new unified kf at (max t) + 1.
     duplicateKeyframe(seqId, t) {
         const seq = this.sequences.get(seqId);
         if (!seq) return null;
@@ -679,7 +677,6 @@ class Sequencer extends EventTarget {
         return newT;
     }
 
-    // Which tracks have an entry at time t (used by the UI to show per-track pips + delete).
     tracksAtTime(seq, t) {
         if (!seq?.tracks) return [];
         const rt = roundT(t);
@@ -690,7 +687,60 @@ class Sequencer extends EventTarget {
         return out;
     }
 
-    // Retime a single property's keyframe. Leaves other properties intact.
+    recordTrackEntry(seqId, trackKey, t) {
+        const seq = this.sequences.get(seqId);
+        if (!seq) return;
+        const { target, prop } = splitTrackKey(trackKey);
+        const snap = captureSnapshot([target]);
+        const value = readSnapshotProp(snap, target, prop);
+        if (value === undefined) return;
+        if (!seq.tracks[trackKey]) seq.tracks[trackKey] = [];
+        this._upsertTrackEntry(seq.tracks[trackKey], t, value, 'cubicInOut');
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
+    setTrackEntry(seqId, trackKey, t, value, easing = 'cubicInOut') {
+        const seq = this.sequences.get(seqId);
+        if (!seq) return;
+        if (!seq.tracks[trackKey]) seq.tracks[trackKey] = [];
+        this._upsertTrackEntry(seq.tracks[trackKey], t, value, easing);
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
+    // `locked` is a UI hint — the sequencer's mutation methods don't enforce it, so
+    // scripted operations remain unaffected.
+    setTrackEntryLocked(seqId, trackKey, t, locked) {
+        const seq = this.sequences.get(seqId);
+        if (!seq || !seq.tracks[trackKey]) return;
+        const entry = seq.tracks[trackKey].find(e => sameT(e.t, t));
+        if (!entry) return;
+        entry.locked = !!locked;
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
+    setTrackEntryValue(seqId, trackKey, t, value) {
+        const seq = this.sequences.get(seqId);
+        if (!seq || !seq.tracks[trackKey]) return;
+        const entry = seq.tracks[trackKey].find(e => sameT(e.t, t));
+        if (!entry) return;
+        entry.value = deepClone(value);
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
+    setTrackEntryEasing(seqId, trackKey, t, easing) {
+        const seq = this.sequences.get(seqId);
+        if (!seq || !EASING_NAMES.includes(easing) || !seq.tracks[trackKey]) return;
+        const entry = seq.tracks[trackKey].find(e => sameT(e.t, t));
+        if (!entry) return;
+        entry.easing = easing;
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
     setTrackEntryTime(seqId, trackKey, oldT, newT) {
         const seq = this.sequences.get(seqId);
         if (!seq || !seq.tracks[trackKey]) return;
@@ -702,7 +752,6 @@ class Sequencer extends EventTarget {
         this._emit('seq:update', { id: seqId, spec: seq });
     }
 
-    // Remove a single property's keyframe at time t. Leaves other properties intact.
     removeTrackEntry(seqId, trackKey, t) {
         const seq = this.sequences.get(seqId);
         if (!seq || !seq.tracks[trackKey]) return;
@@ -713,7 +762,6 @@ class Sequencer extends EventTarget {
         this._emit('seq:update', { id: seqId, spec: seq });
     }
 
-    // Remove every track entry at time t (the unified-kf notion of "delete").
     removeKeyframe(id, t) {
         const seq = this.sequences.get(id);
         if (!seq) return;
@@ -729,9 +777,7 @@ class Sequencer extends EventTarget {
         }
     }
 
-    // updateKeyframe (compat): apply mutator to a synthesized snapshot, then push changed
-    // property values back into their tracks. Only writes to tracks that already have an
-    // entry at t — creating tracks would defeat sparsity.
+    // Only writes back to tracks that already have an entry at t (preserves sparsity).
     updateKeyframe(seqId, t, mutator) {
         const seq = this.sequences.get(seqId);
         if (!seq) return;
@@ -768,8 +814,6 @@ class Sequencer extends EventTarget {
         }
     }
 
-    // -- Ref-based variants -- (refs are unified-kf objects from seq.keyframes)
-
     updateKeyframeRef(id, kfRef, mutator) {
         const seq = this.sequences.get(id);
         if (!seq || seq.keyframes.indexOf(kfRef) < 0) return;
@@ -805,8 +849,6 @@ class Sequencer extends EventTarget {
         if (!seq || seq.keyframes.indexOf(kfRef) < 0) return;
         this.setKeyframeEasing(id, kfRef.t, easing);
     }
-
-    // -- Playback --
 
     play(id, opts = {}) {
         const seq = this.sequences.get(id);
@@ -907,8 +949,6 @@ class Sequencer extends EventTarget {
         }
     }
 
-    // -- Serialize / hydrate --
-
     serialize() {
         return Array.from(this.sequences.values()).map(s => ({
             id: s.id,
@@ -920,11 +960,10 @@ class Sequencer extends EventTarget {
             tracks: Object.fromEntries(
                 Object.entries(s.tracks).map(([k, entries]) => [
                     k,
-                    entries.map(e => ({ t: e.t, value: deepClone(e.value), easing: e.easing || 'cubicInOut' }))
+                    entries.map(e => ({ t: e.t, value: deepClone(e.value), easing: e.easing || 'cubicInOut', locked: !!e.locked }))
                 ])
             ),
-            // Legacy keyframes emitted alongside tracks so older readers of this file still
-            // recover approximate animation data. hydrate() prefers `tracks` when both are present.
+            // Legacy shape emitted alongside tracks so older readers can still recover data.
             keyframes: (s.keyframes || []).map(k => ({
                 t: k.t,
                 snapshot: deepClone(k.snapshot),
