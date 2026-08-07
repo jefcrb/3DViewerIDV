@@ -323,8 +323,6 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     gap: 6px;
 }
 #modeToggleBtn,
-#topActions #exportBtn,
-#topActions #importBtn,
 #topActions #langToggleBtn {
     padding: 8px 14px;
     border: none;
@@ -339,11 +337,7 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 }
 #modeToggleBtn { background: #7b61ff; }
 #modeToggleBtn:hover { background: #6750d4; }
-#topActions #exportBtn,
-#topActions #importBtn,
 #topActions #langToggleBtn { background: #3c3c3c; }
-#topActions #exportBtn:hover,
-#topActions #importBtn:hover,
 #topActions #langToggleBtn:hover { background: #4a4a4a; }
 
 #editorPanel {
@@ -547,7 +541,8 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 .sequence-scrub-bar .scrub-time-cur { color: #e5e5e5; }
 .sequence-scrub-bar .scrub-close,
 .sequence-scrub-bar .scrub-play,
-.sequence-scrub-bar .scrub-add {
+.sequence-scrub-bar .scrub-add,
+.sequence-scrub-bar .scrub-snapshot {
     background: #2c2c2c;
     border: 1px solid #3c3c3c;
     color: #e5e5e5;
@@ -569,36 +564,17 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 .sequence-scrub-bar .scrub-close:hover { color: #fff; }
 .sequence-scrub-bar .scrub-play { color: #80ff80; }
 .sequence-scrub-bar .scrub-add { color: #ffcf47; }
+.sequence-scrub-bar .scrub-snapshot {
+    color: #7bb1ff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 6px;
+}
+.sequence-scrub-bar .scrub-snapshot svg { display: block; }
 .sequence-scrub-bar .scrub-play:hover,
-.sequence-scrub-bar .scrub-add:hover { background: #3c3c3c; }
-.sequence-scrub-bar .scrub-strip {
-    position: relative;
-    height: 32px;
-    margin: 4px 0 2px 0;
-    cursor: crosshair;
-    user-select: none;
-}
-.sequence-scrub-bar .scrub-strip-track {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 6px;
-    transform: translateY(-50%);
-    background: #3c3c3c;
-    border-radius: 3px;
-    pointer-events: none;
-}
-.sequence-scrub-bar .scrub-playhead {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: #7bb1ff;
-    transform: translateX(-1px);
-    pointer-events: none;
-    box-shadow: 0 0 6px rgba(123, 177, 255, 0.5);
-}
+.sequence-scrub-bar .scrub-add:hover,
+.sequence-scrub-bar .scrub-snapshot:hover { background: #3c3c3c; }
 .sequence-scrub-bar .scrub-marker {
     position: absolute;
     top: 50%;
@@ -656,7 +632,6 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     border-top: 1px solid #2c2c2c;
     margin-top: 4px;
 }
-/* --- Per-track keyframe bars: one row per animatable property --- */
 .sequence-scrub-bar .scrub-tracks {
     display: flex;
     flex-direction: column;
@@ -670,6 +645,15 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     grid-template-columns: 62px 1fr;
     align-items: center;
     gap: 8px;
+    padding: 1px 0;
+    border-radius: 3px;
+    transition: background 0.1s;
+}
+.sequence-scrub-bar .scrub-track-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+.sequence-scrub-bar .scrub-track-row:hover .scrub-track-label {
+    color: #d0d0d0;
 }
 .sequence-scrub-bar .scrub-track-label {
     color: #a0a0a0;
@@ -693,10 +677,24 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 }
 .sequence-scrub-bar .scrub-track-strip {
     position: relative;
-    height: 12px;
+    height: 18px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 2px;
-    cursor: default;
+    cursor: crosshair;
+    user-select: none;
+}
+.sequence-scrub-bar .scrub-track-row:hover .scrub-track-strip {
+    background: rgba(255, 255, 255, 0.06);
+}
+.sequence-scrub-bar .scrub-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #7bb1ff;
+    transform: translateX(-1px);
+    pointer-events: none;
+    box-shadow: 0 0 6px rgba(123, 177, 255, 0.5);
 }
 .sequence-scrub-bar .scrub-track-playhead {
     position: absolute;
@@ -710,28 +708,57 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 .sequence-scrub-bar .scrub-track-dot {
     position: absolute;
     top: 50%;
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     transform: translate(-50%, -50%) rotate(45deg);
     background: #d0d0d0;
     border: 1px solid #1e1e1e;
     cursor: grab;
     transition: width 0.05s, height 0.05s;
 }
+/* Larger hit area than the visible dot so it's easier to grab. */
+.sequence-scrub-bar .scrub-track-dot::before {
+    content: '';
+    position: absolute;
+    inset: -7px;
+}
 .sequence-scrub-bar .scrub-track-dot:hover {
     filter: brightness(1.4);
 }
-.sequence-scrub-bar .scrub-track-dot.selected {
-    width: 9px;
-    height: 9px;
-    box-shadow: 0 0 4px currentColor;
+.sequence-scrub-bar .scrub-track-dot.track-selected {
+    width: 11px;
+    height: 11px;
+    outline: 1.5px solid #ffcf47;
+    outline-offset: 1px;
+    z-index: 2;
+}
+.sequence-scrub-bar .scrub-track-dot.locked {
+    cursor: not-allowed;
+}
+/* Circle (not rotated with the parent diamond) marking the locked state. */
+.sequence-scrub-bar .scrub-track-dot.locked::after {
+    content: '';
+    position: absolute;
+    inset: 22%;
+    background: #000;
+    border-radius: 50%;
+    pointer-events: none;
+}
+.sequence-scrub-bar .scrub-locked-tag {
+    margin-left: 4px;
+    font-size: 10px;
+    opacity: 0.7;
+}
+.sequence-scrub-bar .scrub-inline-selected.locked .scrub-track-val-input[disabled],
+.sequence-scrub-bar .scrub-inline-selected.locked .scrub-track-edit-t[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 .sequence-scrub-bar .scrub-track-dot.dragging {
     cursor: grabbing;
     transform: translate(-50%, -50%) rotate(45deg) scale(1.2);
 }
 
-/* --- Bottom section: compact inline kf row + bottom-right nav --- */
 .sequence-scrub-bar .scrub-kf-inline-row {
     display: grid;
     grid-template-columns: 1fr 84px 1.2fr 84px 1fr;
@@ -774,15 +801,22 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 }
 .sequence-scrub-bar .scrub-inline-selected .scrub-inline-t { color: #a0a0a0; }
 .sequence-scrub-bar .scrub-inline-t input[type="number"] {
-    background: #1e1e1e;
-    border: 1px solid #3c3c3c;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #3c3c3c;
     color: #e5e5e5;
-    border-radius: 3px;
+    border-radius: 0;
     padding: 2px 4px;
     font-size: 10.5px;
     font-family: inherit;
     width: 54px;
     text-align: center;
+    transition: border-color 0.1s;
+}
+.sequence-scrub-bar .scrub-inline-t input[type="number"]:hover,
+.sequence-scrub-bar .scrub-inline-t input[type="number"]:focus {
+    border-bottom-color: #7bb1ff;
+    outline: none;
 }
 .sequence-scrub-bar .scrub-diamond {
     display: block;
@@ -820,6 +854,19 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     position: relative;
     width: 60px;
     height: 24px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+}
+.sequence-scrub-bar .scrub-easing-graph-wide {
+    width: 110px;
+    height: 28px;
+}
+.sequence-scrub-bar .scrub-easing-graph:hover .scrub-easing-svg {
+    border-color: #5a7ab0;
+    background: #202020;
 }
 .sequence-scrub-bar .scrub-easing-svg {
     display: block;
@@ -845,8 +892,7 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     font-variant-numeric: tabular-nums;
 }
 
-/* 3-column grid keeps the box perfectly centered — arrow sits in the left column,
-   right column is an empty spacer of equal fr. */
+/* 3-column grid: empty 1fr spacers on both sides keep the diff box centered. */
 .sequence-scrub-bar .scrub-diff-wrap {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -895,7 +941,6 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     white-space: nowrap;
 }
 
-/* Drag hint tooltip — pinned at the top of the scrub bar during marker drag. */
 .sequence-scrub-bar .scrub-drag-hint {
     position: absolute;
     left: 50%;
@@ -937,6 +982,203 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 }
 .sequence-scrub-bar .scrub-kf-nav-bottom button:hover:not(:disabled) { background: #3c3c3c; }
 .sequence-scrub-bar .scrub-kf-nav-bottom button:disabled { opacity: 0.35; cursor: default; }
+
+/* Highlighted prev→next interval on the selected channel's strip. */
+.sequence-scrub-bar .scrub-track-segment-highlight {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    opacity: 0.12;
+    pointer-events: none;
+    border-radius: 2px;
+}
+
+.sequence-scrub-bar .scrub-track-panel {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #2c2c2c;
+    min-height: 130px;
+}
+.sequence-scrub-bar .scrub-track-panel-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.sequence-scrub-bar .scrub-track-panel-empty-hint {
+    color: #6a6a6a;
+    font-size: 11px;
+    text-align: center;
+    max-width: 360px;
+}
+.sequence-scrub-bar .scrub-track-panel-filled {
+    display: flex;
+    flex-direction: column;
+}
+/* Nav row sticks to the bottom so the panel's floor height stays honest even when
+   the inline row above is short. */
+.sequence-scrub-bar .scrub-track-panel-filled .scrub-kf-nav-bottom {
+    margin-top: auto;
+}
+
+.sequence-scrub-bar .scrub-track-panel-title {
+    padding-bottom: 2px;
+    color: #b3b3b3;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sequence-scrub-bar .scrub-track-panel-title + .scrub-kf-inline-row {
+    border-top: none;
+    padding-top: 4px;
+    margin-top: 0;
+}
+.sequence-scrub-bar .scrub-track-value {
+    color: #cfcfcf;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sequence-scrub-bar .scrub-inline-selected .scrub-track-value {
+    color: #ffcf47;
+    font-weight: 500;
+}
+
+.sequence-scrub-bar .scrub-track-value-edit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    flex-wrap: wrap;
+    max-width: 260px;
+    margin-top: 8px;
+}
+.sequence-scrub-bar .scrub-track-val-input {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #3c3c3c;
+    color: #ffcf47;
+    border-radius: 0;
+    padding: 2px 4px;
+    font-size: 10px;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    width: 44px;
+    text-align: center;
+    transition: border-color 0.1s;
+}
+.sequence-scrub-bar .scrub-track-val-input:hover,
+.sequence-scrub-bar .scrub-track-val-input:focus {
+    border-bottom-color: #ffcf47;
+    outline: none;
+}
+.sequence-scrub-bar .scrub-track-val-labeled {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+.sequence-scrub-bar .scrub-track-val-axis {
+    color: #7a7a7a;
+    font-size: 8.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 1;
+}
+/* Clock icon prefixing the time value on kf cards. */
+.sequence-scrub-bar .scrub-t-icon {
+    opacity: 0.6;
+    font-size: 10px;
+    margin-right: 2px;
+}
+.sequence-scrub-bar .scrub-inline-t {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+.sequence-scrub-bar .scrub-track-val-input[type="color"] {
+    width: 28px;
+    height: 20px;
+    padding: 1px;
+    cursor: pointer;
+    border: 1px solid #3c3c3c;
+    border-radius: 3px;
+}
+.sequence-scrub-bar .scrub-track-val-extra {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    font-size: 9px;
+    color: #7a7a7a;
+    text-transform: uppercase;
+}
+.sequence-scrub-bar .scrub-track-val-extra input {
+    width: 40px;
+}
+
+/* Appended to document.body so it can escape the scrub-bar's overflow. */
+.scrub-ctx-menu {
+    position: fixed;
+    z-index: 2000;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    border-radius: 5px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+    padding: 4px 0;
+    min-width: 180px;
+    color: #e5e5e5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    font-size: 12px;
+    user-select: none;
+}
+.scrub-ctx-header {
+    padding: 4px 12px 6px 12px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid #2c2c2c;
+    color: #7a7a7a;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.2px;
+}
+.scrub-ctx-item {
+    padding: 6px 14px;
+    cursor: pointer;
+    line-height: 1.2;
+}
+.scrub-ctx-item:hover { background: #3a4a6c; color: #ffffff; }
+
+.scrub-easing-picker {
+    position: fixed;
+    z-index: 2000;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    border-radius: 5px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+    padding: 4px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    color: #e5e5e5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    font-size: 11px;
+}
+.scrub-easing-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.scrub-easing-item:hover { background: #3a4a6c; }
+.scrub-easing-item.selected { background: #2a3852; outline: 1px solid #5a7ab0; }
+.scrub-easing-item svg { flex-shrink: 0; }
 .row-head strong {
     flex: 1;
     color: #fff;

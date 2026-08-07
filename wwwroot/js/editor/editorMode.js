@@ -6,7 +6,7 @@ import { renderSlotsPanel } from './slotsPanel.js';
 import { renderCameraPanel } from './cameraPanel.js';
 import { renderAnimationsPanel } from './animationsPanel.js';
 import { renderWorldPanel } from './worldPanel.js';
-import { saveSettings, exportSettings, importSettings } from '../storage/settingsStorage.js';
+import { saveSettings } from '../storage/settingsStorage.js';
 import { sequencer } from '../animation/sequencer.js';
 import { clipManager } from '../animation/clips.js';
 import { setFiringAllowed } from '../animation/triggers.js';
@@ -288,40 +288,11 @@ function buildHeader(panel) {
 }
 
 function wireTopActions() {
-    const exportBtn = document.getElementById('exportBtn');
-    const importBtn = document.getElementById('importBtn');
-    const fileInput = document.getElementById('importFile');
     const langBtn = document.getElementById('langToggleBtn');
-    if (!exportBtn || !importBtn || !fileInput) return;
-
-    exportBtn.textContent = t('topActions.export');
-    exportBtn.title = t('topActions.exportTitle');
-    importBtn.textContent = t('topActions.import');
-    importBtn.title = t('topActions.importTitle');
     if (langBtn) {
         langBtn.textContent = t('topActions.langToggle');
         langBtn.onclick = () => toggleLanguage();
     }
-
-    exportBtn.onclick = () => exportSettings();
-    importBtn.onclick = () => fileInput.click();
-    fileInput.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const ok = confirm(`Replace current settings with "${file.name}"? This overwrites viewer_settings.json and reloads the page.`);
-        if (!ok) {
-            fileInput.value = '';
-            return;
-        }
-        try {
-            clearTimeout(autoSaveTimer);
-            await importSettings(file);
-            location.reload();
-        } catch (err) {
-            alert('Import failed: ' + err.message);
-            fileInput.value = '';
-        }
-    };
 }
 
 function buildTabs(panel) {
