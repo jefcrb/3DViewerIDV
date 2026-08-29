@@ -163,6 +163,7 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
                 }
             }
 
+            model.userData.baseScale = finalScale;
             model.scale.set(
                 finalScale * transform.scale.x,
                 finalScale * transform.scale.y,

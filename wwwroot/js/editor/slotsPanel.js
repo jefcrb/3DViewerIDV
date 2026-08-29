@@ -26,9 +26,10 @@ function slotRow(spec) {
                 <input type="number" step="0.01" value="${spec.rotation[2]}" class="rot-z">
             </label>
             <label>${t('characters.scale')}
-                <input type="number" step="0.05" value="${spec.scale[0]}" class="scl-x">
-                <input type="number" step="0.05" value="${spec.scale[1]}" class="scl-y">
-                <input type="number" step="0.05" value="${spec.scale[2]}" class="scl-z">
+                <input type="number" step="0.05" min="0.01" value="${spec.scale[0]}" class="scl-uniform">
+            </label>
+            <label>${t('characters.delay')}
+                <input type="number" step="0.1" min="0" value="${spec.pickDelay ?? 0}" class="pick-delay">
             </label>
         </div>
     `;
@@ -37,6 +38,7 @@ function slotRow(spec) {
     row.querySelector('.remove-btn').onclick = () => registry.removeSlot(spec.id);
 
     const onChange = () => {
+        const u = parseFloat(row.querySelector('.scl-uniform').value);
         registry.updateSlot(spec.id, {
             position: [
                 parseFloat(row.querySelector('.pos-x').value),
@@ -48,11 +50,8 @@ function slotRow(spec) {
                 parseFloat(row.querySelector('.rot-y').value),
                 parseFloat(row.querySelector('.rot-z').value)
             ],
-            scale: [
-                parseFloat(row.querySelector('.scl-x').value),
-                parseFloat(row.querySelector('.scl-y').value),
-                parseFloat(row.querySelector('.scl-z').value)
-            ]
+            scale: [u, u, u],
+            pickDelay: parseFloat(row.querySelector('.pick-delay').value) || 0
         });
         applyRegistrySlotsToCharacterPositions(registry);
     };

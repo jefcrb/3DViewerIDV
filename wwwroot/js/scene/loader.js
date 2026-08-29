@@ -218,17 +218,17 @@ export function applyRegistrySlotsToCharacterPositions(registry) {
         }
     }
 
+    const applyLive = (model, t) => {
+        model.position.copy(t.position);
+        model.rotation.copy(t.rotation);
+        const base = model.userData.baseScale ?? 1;
+        model.scale.set(base * t.scale.x, base * t.scale.y, base * t.scale.z);
+    };
     const hunterChar = characterState.loadedCharacters.hunter;
-    if (hunterChar?.model && updates.hunter) {
-        hunterChar.model.position.copy(updates.hunter.position);
-        hunterChar.model.rotation.copy(updates.hunter.rotation);
-    }
+    if (hunterChar?.model && updates.hunter) applyLive(hunterChar.model, updates.hunter);
     for (let i = 0; i < 4; i++) {
         const char = characterState.loadedCharacters.survivors[i];
-        if (char?.model && updates.survivors[i]) {
-            char.model.position.copy(updates.survivors[i].position);
-            char.model.rotation.copy(updates.survivors[i].rotation);
-        }
+        if (char?.model && updates.survivors[i]) applyLive(char.model, updates.survivors[i]);
     }
 }
 

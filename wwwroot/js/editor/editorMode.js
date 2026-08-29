@@ -82,7 +82,7 @@ export function selectTarget(key) {
 
     if (key === 'liveCamera') {
         transformControls.attach(liveCamera);
-        transformControls.setMode('translate');
+        setGizmoMode('translate');
         transformControls.visible = true;
         updateProxyVisibility();
         return;
@@ -93,7 +93,7 @@ export function selectTarget(key) {
         const light = registry.getLight(id)?.threeObject;
         if (light) {
             transformControls.attach(light);
-            transformControls.setMode('translate');
+            setGizmoMode('translate');
             transformControls.visible = true;
         }
         updateProxyVisibility();
@@ -105,11 +105,16 @@ export function selectTarget(key) {
         const proxy = ensureSlotProxy(id);
         if (proxy) {
             transformControls.attach(proxy);
-            transformControls.setMode('translate');
+            setGizmoMode('translate');
             transformControls.visible = true;
         }
         updateProxyVisibility();
     }
+}
+
+function setGizmoMode(mode) {
+    if (!transformControls) return;
+    transformControls.setMode(mode);
 }
 
 function ensureSlotProxy(slotId) {
@@ -186,6 +191,14 @@ function wireGizmoTransforms() {
             const id = selectedTargetId.slice('slot:'.length);
             const proxy = proxyByKey.get(selectedTargetId);
             if (proxy) {
+                // Slots scale uniformly — take the axis the user is dragging.
+                if (transformControls.mode === 'scale') {
+                    const axis = transformControls.axis;
+                    let u = proxy.scale.x;
+                    if (axis === 'Y') u = proxy.scale.y;
+                    else if (axis === 'Z') u = proxy.scale.z;
+                    proxy.scale.set(u, u, u);
+                }
                 registry.updateSlot(id, {
                     position: [proxy.position.x, proxy.position.y, proxy.position.z],
                     rotation: [proxy.rotation.x, proxy.rotation.y, proxy.rotation.z],
@@ -239,9 +252,7 @@ function syncPanelInputs(detail) {
         setIfNotFocused(row.querySelector('.rot-x'), spec.rotation[0]);
         setIfNotFocused(row.querySelector('.rot-y'), spec.rotation[1]);
         setIfNotFocused(row.querySelector('.rot-z'), spec.rotation[2]);
-        setIfNotFocused(row.querySelector('.scl-x'), spec.scale[0]);
-        setIfNotFocused(row.querySelector('.scl-y'), spec.scale[1]);
-        setIfNotFocused(row.querySelector('.scl-z'), spec.scale[2]);
+        setIfNotFocused(row.querySelector('.scl-uniform'), spec.scale[0]);
         return;
     }
     if (detail.type === 'liveCamera:update') {
@@ -283,9 +294,9 @@ function buildHeader(panel) {
     `;
     panel.appendChild(header);
 
-    header.querySelector('#gizmoTranslate').onclick = () => transformControls.setMode('translate');
-    header.querySelector('#gizmoRotate').onclick = () => transformControls.setMode('rotate');
-    header.querySelector('#gizmoScale').onclick = () => transformControls.setMode('scale');
+    header.querySelector('#gizmoTranslate').onclick = () => setGizmoMode('translate');
+    header.querySelector('#gizmoRotate').onclick = () => setGizmoMode('rotate');
+    header.querySelector('#gizmoScale').onclick = () => setGizmoMode('scale');
     header.querySelector('#gizmoDetach').onclick = () => detachGizmo();
     header.querySelector('#saveAllBtn').onclick = () => saveEditorState();
 }
@@ -413,9 +424,9 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     window.addEventListener('keydown', (e) => {
         if (mode !== 'editor') return;
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-        if (e.key === 'w') transformControls.setMode('translate');
-        if (e.key === 'e') transformControls.setMode('rotate');
-        if (e.key === 'r') transformControls.setMode('scale');
+        if (e.key === 'w') setGizmoMode('translate');
+        if (e.key === 'e') setGizmoMode('rotate');
+        if (e.key === 'r') setGizmoMode('scale');
         if (e.key === 'Escape') detachGizmo();
     });
 

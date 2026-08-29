@@ -399,13 +399,17 @@ class Registry extends EventTarget {
 
     _normalizeSlotSpec(spec) {
         const role = spec.role || DEFAULT_SLOT_ROLES[spec.id] || spec.id;
+        // Slots scale uniformly; max keeps legacy non-uniform saves from shrinking.
+        const s = vecToArr(spec.scale ?? [1, 1, 1]);
+        const u = Math.max(s[0], s[1], s[2]) || 1;
         return {
             id: spec.id,
             role,
             label: spec.label || role,
             position: vecToArr(spec.position ?? [0, 0, 0]),
             rotation: vecToArr(spec.rotation ?? [0, 0, 0]),
-            scale: vecToArr(spec.scale ?? [1, 1, 1])
+            scale: [u, u, u],
+            pickDelay: Math.max(0, Number(spec.pickDelay) || 0)
         };
     }
 

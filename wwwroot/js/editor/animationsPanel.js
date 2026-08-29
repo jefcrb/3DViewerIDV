@@ -1555,9 +1555,7 @@ function slotSection(kf, slotId) {
             `)}
             ${propRow(tk('scale'), `
                 <label>${t('characters.scale')}
-                    <input type="number" step="0.05" value="${s.scale[0]}" data-path="slots.${slotId}.scale.0">
-                    <input type="number" step="0.05" value="${s.scale[1]}" data-path="slots.${slotId}.scale.1">
-                    <input type="number" step="0.05" value="${s.scale[2]}" data-path="slots.${slotId}.scale.2">
+                    <input type="number" step="0.05" min="0.01" value="${s.scale[0]}" data-path="slots.${slotId}.scale.uniform">
                 </label>
             `)}
         </div>
@@ -1583,6 +1581,15 @@ function bindDetailInputs(container, seq, kf) {
             const path = el.dataset.path;
             const isDeg = el.hasAttribute('data-deg');
             sequencer.updateKeyframe(seq.id, kf.t, (snap) => {
+                // Uniform slot scale: one input drives all three components.
+                if (path.endsWith('.scale.uniform')) {
+                    const parent = resolvePath(snap, path.slice(0, -'.uniform'.length));
+                    if (!parent) return;
+                    const u = parseFloat(el.value);
+                    if (Number.isNaN(u)) return;
+                    parent.parent[parent.key] = [u, u, u];
+                    return;
+                }
                 const target = resolvePath(snap, path);
                 if (!target) return;
                 if (el.type === 'color') {

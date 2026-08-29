@@ -53,6 +53,7 @@ const translations = {
         'characters.position': 'Position',
         'characters.rotation': 'Rotation',
         'characters.scale': 'Scale',
+        'characters.delay': 'Delay',
 
         // === cameras panel ===
         'cameras.live': 'Live (Broadcast) Camera',
@@ -236,6 +237,7 @@ const translations = {
         'characters.position': '位置',
         'characters.rotation': '旋转',
         'characters.scale': '缩放',
+        'characters.delay': '延迟',
 
         // === cameras panel ===
         'cameras.live': '直播相机',
