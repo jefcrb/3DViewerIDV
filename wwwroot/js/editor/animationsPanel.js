@@ -6,6 +6,7 @@ import { selectTarget } from './editorMode.js';
 import { getEditorCameraRef } from './cameraPanel.js';
 import { showPath, hidePath } from './pathPreview.js';
 import { t } from '../i18n.js';
+import { bindingSelectHtml, effectiveColor } from './colorBinding.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -540,7 +541,7 @@ function propOfTrackKey(trackKey) {
 
 const AXIS_LABELS = ['x', 'y', 'z', 'w'];
 
-function renderTrackValueEditor(trackKey, value, locked = false) {
+function renderTrackValueEditor(trackKey, value, locked = false, binding = 'static') {
     if (value == null) return '';
     const prop = propOfTrackKey(trackKey);
     const dis = locked ? 'disabled' : '';
@@ -559,7 +560,10 @@ function renderTrackValueEditor(trackKey, value, locked = false) {
         return `<input type="number" class="scrub-track-val-input" data-scalar step="0.05" value="${value.toFixed(2)}" ${dis}>`;
     }
     if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) {
-        return `<input type="color" class="scrub-track-val-input" data-scalar value="${value}" ${dis}>`;
+        const bound = binding && binding !== 'static';
+        const shown = effectiveColor(value, binding);
+        const colorDis = (locked || bound) ? 'disabled' : '';
+        return `<input type="color" class="scrub-track-val-input" data-scalar value="${shown}" ${colorDis}>${bindingSelectHtml(binding, { disabled: locked })}`;
     }
     if (typeof value === 'object') {
         return Object.entries(value)
@@ -654,7 +658,7 @@ function renderTrackEditPanel(seq) {
                 ${clockIcon}
                 <input type="number" class="scrub-track-edit-t" step="0.05" min="0" value="${entry.t.toFixed(2)}" ${dis}>s
             </div>
-            <div class="scrub-track-value-edit">${renderTrackValueEditor(trackKey, entry.value, entry.locked)}</div>
+            <div class="scrub-track-value-edit">${renderTrackValueEditor(trackKey, entry.value, entry.locked, entry.binding)}</div>
         </div>`;
 
     return `
@@ -760,6 +764,12 @@ function wireTrackEditPanel(seq) {
                 }
             } else return;
             sequencer.setTrackEntryValue(scrubId, trackKey, entry.t, nextValue);
+            sequencer.sampleAt(scrubId, entry.t);
+        };
+    });
+    scrubBarEl.querySelectorAll('.scrub-inline-selected .color-binding-select').forEach(sel => {
+        sel.onchange = () => {
+            sequencer.setTrackEntryBinding(scrubId, trackKey, entry.t, sel.value);
             sequencer.sampleAt(scrubId, entry.t);
         };
     });
@@ -1463,7 +1473,7 @@ function liveCameraSection(kf) {
     `;
 }
 
-function lightSection(kf, lightId) {
+function lightSection(kf, lightId, seq) {
     const l = kf.snapshot.lights?.[lightId];
     if (!l) return '';
     const spec = registry.getLight(lightId)?.spec;
@@ -1472,6 +1482,10 @@ function lightSection(kf, lightId) {
     const isSpot = spec?.type === 'Spot';
     const showPos = !isAmbient;
     const tk = (prop) => `light:${lightId}.${prop}`;
+    const colorEntry = seq?.tracks?.[tk('color')]?.find(e => Math.abs(e.t - kf.t) < 0.001);
+    const colorBinding = colorEntry?.binding || 'static';
+    const colorBound = colorBinding !== 'static';
+    const colorShown = effectiveColor(colorToHex(l.color), colorBinding);
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_LIGHT} ${label} <span class="muted">(${lightId})</span></div>
@@ -1482,7 +1496,8 @@ function lightSection(kf, lightId) {
             `)}
             ${propRow(tk('color'), `
                 <label>${t('lights.color')}
-                    <input type="color" value="${colorToHex(l.color)}" data-path="lights.${lightId}.color">
+                    <input type="color" value="${colorShown}" data-path="lights.${lightId}.color" ${colorBound ? 'disabled' : ''}>
+                    ${bindingSelectHtml(colorBinding)}
                 </label>
             `)}
             ${showPos ? `
@@ -1598,6 +1613,16 @@ function bindDetailInputs(container, seq, kf) {
             renderAnimationsPanel();
         };
     });
+    // Color-binding dropdowns live inside the propRow for a color-valued track.
+    container.querySelectorAll('.color-binding-select').forEach(sel => {
+        sel.onchange = () => {
+            const row = sel.closest('.kf-prop-row');
+            const trackKey = row?.dataset.trackKey;
+            if (!trackKey) return;
+            sequencer.setTrackEntryBinding(seq.id, trackKey, kf.t, sel.value);
+            renderAnimationsPanel();
+        };
+    });
 }
 
 function keyframeRow(seq, kf, prevKf) {
@@ -1660,7 +1685,7 @@ function keyframeRow(seq, kf, prevKf) {
         const sections = [];
         if (seq.targets.includes('liveCamera')) sections.push(liveCameraSection(kf));
         for (const target of seq.targets) {
-            if (target.startsWith('light:')) sections.push(lightSection(kf, target.slice('light:'.length)));
+            if (target.startsWith('light:')) sections.push(lightSection(kf, target.slice('light:'.length), seq));
             if (target.startsWith('slot:')) sections.push(slotSection(kf, target.slice('slot:'.length)));
         }
         // Easing controls how this keyframe transitions to the NEXT one (ease out).

@@ -13,6 +13,7 @@ import { setFiringAllowed } from '../animation/triggers.js';
 import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
 import { t, toggleLanguage } from '../i18n.js';
 import { PLUGIN_VERSION } from '../config.js';
+import { effectiveColor } from './colorBinding.js';
 
 let mode = 'live';
 let editorCamera = null;
@@ -216,7 +217,9 @@ function syncPanelInputs(detail) {
         setIfNotFocused(row.querySelector('.intensity-input'), spec.intensity);
         const ival = row.querySelector('.intensity-value');
         if (ival) ival.textContent = (spec.intensity ?? 0).toFixed(2);
-        setIfNotFocused(row.querySelector('.color-input'), spec.color);
+        setIfNotFocused(row.querySelector('.color-input'), effectiveColor(spec.color, spec.colorBinding));
+        const groundEl = row.querySelector('.ground-input');
+        if (groundEl) setIfNotFocused(groundEl, effectiveColor(spec.groundColor, spec.groundColorBinding));
         setIfNotFocused(row.querySelector('.pos-x'), spec.position[0]);
         setIfNotFocused(row.querySelector('.pos-y'), spec.position[1]);
         setIfNotFocused(row.querySelector('.pos-z'), spec.position[2]);

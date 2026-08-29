@@ -16,7 +16,19 @@ export const STANDARD_EVENTS = [
     'survivor_2_deselected',
     'survivor_3_deselected',
     'survivor_4_deselected',
-    'survivor_any_deselected'
+    'survivor_any_deselected',
+    'hunter_picking_started',
+    'hunter_picking_ended',
+    'survivor_1_picking_started',
+    'survivor_2_picking_started',
+    'survivor_3_picking_started',
+    'survivor_4_picking_started',
+    'survivor_any_picking_started',
+    'survivor_1_picking_ended',
+    'survivor_2_picking_ended',
+    'survivor_3_picking_ended',
+    'survivor_4_picking_ended',
+    'survivor_any_picking_ended'
 ];
 
 let firingAllowed = true;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DEV } from '../config.js';
+import { getTeamColor, onTeamColorsChange } from '../state/teamColors.js';
 
 // Single source of truth for editable scene objects. Mutations emit change events.
 
@@ -47,9 +48,12 @@ export const TONE_MAPPING_TYPES = {
 
 const WORLD_DEFAULTS = {
     backgroundColor: '#1a1a2e',
+    backgroundColorBinding: 'static',
     // Optional user-uploaded panorama as a data URL. When set, replaces backgroundColor
     // as the scene background.
     skyboxImage: null,
+    // Blend factor: 0 = image invisible (color only), 1 = image fully opaque covers color.
+    skyboxImageOpacity: 1.0,
     // 'Equirectangular' wraps a 2:1 panorama around the scene; 'UV' flat-maps the image.
     skyboxMapping: 'Equirectangular',
     // When true, both color and image are ignored; scene.background = null so the
@@ -77,6 +81,14 @@ function hexToInt(hex) {
     if (typeof hex === 'number') return hex;
     if (typeof hex !== 'string') return 0xffffff;
     return parseInt(hex.replace('#', '0x'));
+}
+
+function resolveColor(hex, binding) {
+    if (binding && binding !== 'static') {
+        const bound = getTeamColor(binding);
+        if (bound) return bound;
+    }
+    return hex;
 }
 
 function intToHex(n) {
@@ -133,6 +145,21 @@ class Registry extends EventTarget {
             fov: 50
         };
         this.world = { ...WORLD_DEFAULTS };
+        onTeamColorsChange(() => this.reapplyBoundColors());
+    }
+
+    reapplyBoundColors() {
+        for (const [id, entry] of this.lights) {
+            const usesBinding = (entry.spec.colorBinding && entry.spec.colorBinding !== 'static')
+                || (entry.spec.groundColorBinding && entry.spec.groundColorBinding !== 'static');
+            if (!usesBinding) continue;
+            this._applyLightSpec(entry.threeObject, entry.spec);
+            this.emit('lights:update', { id, spec: entry.spec, threeObject: entry.threeObject });
+        }
+        if (this.world.backgroundColorBinding && this.world.backgroundColorBinding !== 'static') {
+            this._applyWorldSpec();
+            this.emit('world:update', { spec: { ...this.world } });
+        }
     }
 
     init(scene, liveCamera, renderer = null) {
@@ -242,7 +269,9 @@ class Registry extends EventTarget {
             name: spec.name || spec.id,
             type: spec.type || 'Directional',
             color: spec.color ?? '#ffffff',
+            colorBinding: spec.colorBinding ?? 'static',
             groundColor: spec.groundColor ?? '#444444',
+            groundColorBinding: spec.groundColorBinding ?? 'static',
             intensity: spec.intensity ?? 1.0,
             position: vecToArr(spec.position ?? [0, 5, 0]),
             target: vecToArr(spec.target ?? [0, 0, 0]),
@@ -252,14 +281,14 @@ class Registry extends EventTarget {
     }
 
     _createThreeLight(spec) {
-        const colorInt = hexToInt(spec.color);
+        const colorInt = hexToInt(resolveColor(spec.color, spec.colorBinding));
         let light;
         switch (spec.type) {
             case 'Ambient':
                 light = new THREE.AmbientLight(colorInt, spec.intensity);
                 break;
             case 'Hemisphere':
-                light = new THREE.HemisphereLight(colorInt, hexToInt(spec.groundColor), spec.intensity);
+                light = new THREE.HemisphereLight(colorInt, hexToInt(resolveColor(spec.groundColor, spec.groundColorBinding)), spec.intensity);
                 light.position.set(...spec.position);
                 break;
             case 'Point':
@@ -299,10 +328,10 @@ class Registry extends EventTarget {
     }
 
     _applyLightSpec(light, spec) {
-        const colorInt = hexToInt(spec.color);
+        const colorInt = hexToInt(resolveColor(spec.color, spec.colorBinding));
         if (light.color) light.color.setHex(colorInt);
         if (light.isHemisphereLight && spec.groundColor) {
-            light.groundColor.setHex(hexToInt(spec.groundColor));
+            light.groundColor.setHex(hexToInt(resolveColor(spec.groundColor, spec.groundColorBinding)));
         }
         light.intensity = spec.intensity;
         if (light.position && !light.isAmbientLight) {
@@ -478,8 +507,9 @@ class Registry extends EventTarget {
                 this._applySkyboxImage(this.world.skyboxImage);
             } else {
                 this._disposeSkyboxTexture();
-                if (this.world.backgroundColor) {
-                    const colorInt = hexToInt(this.world.backgroundColor);
+                const effective = resolveColor(this.world.backgroundColor, this.world.backgroundColorBinding);
+                if (effective) {
+                    const colorInt = hexToInt(effective);
                     if (this.scene.background?.isColor) {
                         this.scene.background.setHex(colorInt);
                     } else {
@@ -526,80 +556,80 @@ class Registry extends EventTarget {
         }
     }
 
-    // Loads the data URL as a texture and sets it as scene.background. Mapping is read
-    // from world.skyboxMapping. Mapping-only changes reuse the cached texture in-place.
-    // GIFs go through a CanvasTexture path that snapshots the animated <img> each frame.
+    // Composites the skybox as color-fill + image drawn at world.skyboxImageOpacity into a
+    // canvas texture, so the color shows through wherever the image is transparent OR when
+    // the opacity slider is < 1. Static images and GIFs use the same pipeline; GIFs additionally
+    // spin a rAF loop to snapshot the animated <img> each frame.
     _applySkyboxImage(dataUrl) {
-        const desiredMapping = SKYBOX_MAPPINGS[this.world.skyboxMapping] ?? THREE.EquirectangularReflectionMapping;
-        if (this._skyboxTexture && this._skyboxTextureSource === dataUrl) {
-            if (this._skyboxTexture.mapping !== desiredMapping) {
-                this._skyboxTexture.mapping = desiredMapping;
-            }
-            if (this.scene) this.scene.background = this._skyboxTexture;
+        const mapping = SKYBOX_MAPPINGS[this.world.skyboxMapping] ?? THREE.EquirectangularReflectionMapping;
+        if (this._skyboxImgSource === dataUrl && this._skyboxImg && this._skyboxCanvas) {
+            this._composeSkybox();
+            this._rebindSkyboxTexture(mapping);
             return;
         }
-        if (dataUrl.startsWith('data:image/gif')) {
-            this._applyGifSkybox(dataUrl, desiredMapping);
-        } else {
-            this._applyStaticSkybox(dataUrl, desiredMapping);
-        }
-    }
 
-    _applyStaticSkybox(dataUrl, mapping) {
-        new THREE.TextureLoader().load(
-            dataUrl,
-            (tex) => {
-                tex.mapping = mapping;
-                tex.colorSpace = THREE.SRGBColorSpace;
-                if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
-                    tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
-                }
-                // Race: if the user cleared/replaced the image while this was loading, drop it.
-                if (this.world.skyboxImage !== dataUrl) { tex.dispose(); return; }
-                this._disposeSkyboxTexture();
-                this._skyboxTexture = tex;
-                this._skyboxTextureSource = dataUrl;
-                if (this.scene) this.scene.background = tex;
-            },
-            undefined,
-            (err) => { console.error('Failed to load skybox image:', err); }
-        );
-    }
-
-    // Browsers animate GIFs on the <img> element itself; we redraw it to a canvas
-    // per frame and let CanvasTexture pick up the change.
-    _applyGifSkybox(dataUrl, mapping) {
+        this._disposeSkyboxTexture();
+        const isGif = dataUrl.startsWith('data:image/gif');
         const img = document.createElement('img');
         img.onload = () => {
+            // Race: user cleared/replaced the image while this was loading.
             if (this.world.skyboxImage !== dataUrl) return;
+            this._skyboxImg = img;
+            this._skyboxImgSource = dataUrl;
             const canvas = document.createElement('canvas');
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.mapping = mapping;
-            tex.colorSpace = THREE.SRGBColorSpace;
-            if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
-                tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
+            this._skyboxCanvas = canvas;
+            this._skyboxCanvasCtx = canvas.getContext('2d');
+            this._composeSkybox();
+            this._rebindSkyboxTexture(mapping);
+            if (isGif) {
+                this._skyboxGif = { rafId: 0 };
+                this._gifTick();
             }
-            this._disposeSkyboxTexture();
-            this._skyboxTexture = tex;
-            this._skyboxTextureSource = dataUrl;
-            this._skyboxGif = { img, canvas, ctx, texture: tex, rafId: 0 };
-            if (this.scene) this.scene.background = tex;
-            this._gifTick();
         };
-        img.onerror = () => console.error('Failed to load GIF skybox');
+        img.onerror = () => console.error('Failed to load skybox image');
         img.src = dataUrl;
+    }
+
+    // Dispose the old texture and bind a fresh CanvasTexture over the same canvas.
+    // Reassigning scene.background is the reliable path — CanvasTexture.needsUpdate alone
+    // has been observed not to re-upload for scene.background in the current three.js build.
+    _rebindSkyboxTexture(mapping) {
+        if (!this._skyboxCanvas) return;
+        if (this._skyboxTexture) this._skyboxTexture.dispose();
+        const tex = new THREE.CanvasTexture(this._skyboxCanvas);
+        tex.mapping = mapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
+            tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
+        }
+        this._skyboxTexture = tex;
+        if (this.scene) this.scene.background = tex;
+    }
+
+    _composeSkybox() {
+        if (!this._skyboxCanvas || !this._skyboxImg) return;
+        const ctx = this._skyboxCanvasCtx;
+        const canvas = this._skyboxCanvas;
+        const opacity = Math.max(0, Math.min(1, this.world.skyboxImageOpacity ?? 1));
+        const bg = resolveColor(this.world.backgroundColor, this.world.backgroundColorBinding) || '#000000';
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (opacity > 0) {
+            ctx.globalAlpha = opacity;
+            ctx.drawImage(this._skyboxImg, 0, 0);
+            ctx.globalAlpha = 1;
+        }
     }
 
     _gifTick() {
         const g = this._skyboxGif;
         if (!g) return;
         g.rafId = requestAnimationFrame(() => this._gifTick());
-        g.ctx.drawImage(g.img, 0, 0);
-        g.texture.needsUpdate = true;
+        this._composeSkybox();
+        if (this._skyboxTexture) this._skyboxTexture.needsUpdate = true;
     }
 
     _disposeSkyboxTexture() {
@@ -610,8 +640,11 @@ class Registry extends EventTarget {
         if (this._skyboxTexture) {
             this._skyboxTexture.dispose();
             this._skyboxTexture = null;
-            this._skyboxTextureSource = null;
         }
+        this._skyboxImg = null;
+        this._skyboxImgSource = null;
+        this._skyboxCanvas = null;
+        this._skyboxCanvasCtx = null;
     }
 
     serialize() {

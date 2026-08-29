@@ -2,11 +2,14 @@ import { state as sceneState, hideDummyModels } from '../scene/loader.js';
 import { state as characterState, loadCharacterModel } from './loader.js';
 import { playOutroAnimation } from '../customization/outroAnimation.js';
 import { fire } from '../animation/triggers.js';
+import { updateTeamColors } from '../state/teamColors.js';
 
 const isWebContext = window.location.hostname === 'localhost';
 let lastFetchedData = null;
 let lastHunterKey = null;
 let lastSurvivorKeys = [null, null, null, null];
+let lastHunterPicking = false;
+let lastSurvivorPicking = [false, false, false, false];
 let sceneLoadedFired = false;
 
 console.log('[Init] Hostname:', window.location.hostname);
@@ -63,11 +66,35 @@ function fireDiffEvents(jsonData) {
     }
     if (anySelected) fire('survivor_any_selected', {});
     if (anyDeselected) fire('survivor_any_deselected', {});
+
+    const newHunterPicking = !!jsonData.hunter?.isPicking;
+    if (newHunterPicking !== lastHunterPicking) {
+        fire(newHunterPicking ? 'hunter_picking_started' : 'hunter_picking_ended',
+             { name: jsonData.hunter?.name });
+        lastHunterPicking = newHunterPicking;
+    }
+
+    let anyPickingStarted = false;
+    let anyPickingEnded = false;
+    for (let i = 0; i < 4; i++) {
+        const newPicking = !!survivors[i]?.isPicking;
+        if (newPicking !== lastSurvivorPicking[i]) {
+            fire(`survivor_${i + 1}_${newPicking ? 'picking_started' : 'picking_ended'}`,
+                 { index: i, name: survivors[i]?.name });
+            if (newPicking) anyPickingStarted = true;
+            else anyPickingEnded = true;
+            lastSurvivorPicking[i] = newPicking;
+        }
+    }
+    if (anyPickingStarted) fire('survivor_any_picking_started', {});
+    if (anyPickingEnded) fire('survivor_any_picking_ended', {});
 }
 
 export function setupCharacterAPI(scene) {
     window.loadCharactersJson = function(jsonData) {
         console.log('Received character data from backend:', jsonData);
+
+        if (jsonData.teams) updateTeamColors(jsonData.teams);
 
         if (sceneState.sceneLoaded) {
             hideDummyModels(sceneState.dummyModels);

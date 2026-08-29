@@ -1,6 +1,7 @@
 import { registry, intToHex } from './registry.js';
 import { selectTarget } from './editorMode.js';
 import { t } from '../i18n.js';
+import { bindingSelectHtml, effectiveColor } from './colorBinding.js';
 
 const LIGHT_TYPES = ['Directional', 'Point', 'Spot', 'Hemisphere', 'Ambient'];
 
@@ -24,6 +25,11 @@ function lightRow(spec) {
     const showSpotExtras = spec.type === 'Spot';
     const showPointExtras = spec.type === 'Point' || spec.type === 'Spot';
 
+    const colorBound = spec.colorBinding && spec.colorBinding !== 'static';
+    const groundBound = spec.groundColorBinding && spec.groundColorBinding !== 'static';
+    const colorDisplay = colorString(effectiveColor(spec.color, spec.colorBinding));
+    const groundDisplay = colorString(effectiveColor(spec.groundColor, spec.groundColorBinding));
+
     row.innerHTML = `
         <div class="row-head">
             <input class="name-input" type="text" value="${spec.name}">
@@ -34,8 +40,14 @@ function lightRow(spec) {
             <button class="remove-btn">×</button>
         </div>
         <div class="row-body">
-            <label>${t('lights.color')} <input type="color" class="color-input" value="${colorString(spec.color)}"></label>
-            ${showGround ? `<label>${t('lights.ground')} <input type="color" class="ground-input" value="${colorString(spec.groundColor)}"></label>` : ''}
+            <label>${t('lights.color')}
+                <input type="color" class="color-input" value="${colorDisplay}" ${colorBound ? 'disabled' : ''}>
+                <span data-binding-slot="color">${bindingSelectHtml(spec.colorBinding)}</span>
+            </label>
+            ${showGround ? `<label>${t('lights.ground')}
+                <input type="color" class="ground-input" value="${groundDisplay}" ${groundBound ? 'disabled' : ''}>
+                <span data-binding-slot="ground">${bindingSelectHtml(spec.groundColorBinding)}</span>
+            </label>` : ''}
             <label>${t('lights.intensity')} <input type="number" min="0" step="1" value="${spec.intensity}" class="intensity-input"></label>
             ${showPosition ? `
             <label>${t('lights.pos')}
@@ -62,13 +74,21 @@ function lightRow(spec) {
     row.querySelector('.remove-btn').onclick = () => registry.removeLight(spec.id);
 
     const readPartial = () => {
+        const colorEl = row.querySelector('.color-input');
+        const colorBindEl = row.querySelector('[data-binding-slot="color"] .color-binding-select');
         const partial = {
             name: row.querySelector('.name-input').value,
-            color: row.querySelector('.color-input').value,
+            color: colorEl.disabled ? spec.color : colorEl.value,
+            colorBinding: colorBindEl ? colorBindEl.value : 'static',
             intensity: parseFloat(row.querySelector('.intensity-input').value),
             castShadow: row.querySelector('.shadow-input').checked
         };
-        if (showGround) partial.groundColor = row.querySelector('.ground-input').value;
+        if (showGround) {
+            const groundEl = row.querySelector('.ground-input');
+            const groundBindEl = row.querySelector('[data-binding-slot="ground"] .color-binding-select');
+            partial.groundColor = groundEl.disabled ? spec.groundColor : groundEl.value;
+            partial.groundColorBinding = groundBindEl ? groundBindEl.value : 'static';
+        }
         if (showPosition) {
             partial.position = [
                 parseFloat(row.querySelector('.pos-x').value),
@@ -99,6 +119,11 @@ function lightRow(spec) {
         const type = el.type;
         if (el.classList.contains('type-select')) {
             el.onchange = () => registry.updateLight(spec.id, { type: el.value });
+        } else if (el.classList.contains('color-binding-select')) {
+            el.onchange = () => {
+                registry.updateLight(spec.id, readPartial(), { trackSpotTarget: true });
+                renderLightsPanel();
+            };
         } else if (type === 'range' || type === 'number' || type === 'color' || type === 'text' || type === 'checkbox') {
             el.oninput = () => {
                 registry.updateLight(spec.id, readPartial(), { trackSpotTarget: true });

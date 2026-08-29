@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { registry, hexToInt, intToHex } from '../editor/registry.js';
 import { state as characterState } from '../characters/loader.js';
+import { getTeamColor } from '../state/teamColors.js';
 
 function newId(prefix) {
     if (crypto && crypto.randomUUID) return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
@@ -106,6 +107,16 @@ function interpolateTrackValue(kind, a, b, t) {
         case 'extras': return lerpExtras(a, b, t);
         default: return t < 0.5 ? a : b;
     }
+}
+
+// Resolves an entry's stored value against its team-color binding at playback time.
+// Only affects hex-string values; anything else is returned as-is.
+function effectiveEntryValue(entry) {
+    if (entry && typeof entry.value === 'string' && entry.binding && entry.binding !== 'static') {
+        const bound = getTeamColor(entry.binding);
+        if (bound) return bound;
+    }
+    return entry ? entry.value : undefined;
 }
 
 function captureLight(spec) {
@@ -388,12 +399,16 @@ class Sequencer extends EventTarget {
                 if (!Array.isArray(entries)) continue;
                 tracks[key] = entries
                     .filter(e => e && typeof e.t === 'number' && e.value !== undefined)
-                    .map(e => ({
-                        t: roundT(e.t),
-                        value: deepClone(e.value),
-                        easing: EASING_NAMES.includes(e.easing) ? e.easing : seqLevelEasing,
-                        locked: !!e.locked
-                    }))
+                    .map(e => {
+                        const out = {
+                            t: roundT(e.t),
+                            value: deepClone(e.value),
+                            easing: EASING_NAMES.includes(e.easing) ? e.easing : seqLevelEasing,
+                            locked: !!e.locked
+                        };
+                        if (typeof e.binding === 'string' && e.binding !== 'static') out.binding = e.binding;
+                        return out;
+                    })
                     .sort((a, b) => a.t - b.t);
             }
         } else if (Array.isArray(spec.keyframes)) {
@@ -468,6 +483,9 @@ class Sequencer extends EventTarget {
         return snap;
     }
 
+    // Returns the STORED value (not team-color-resolved) so round-trips through
+    // updateKeyframe don't freeze a bound entry's fallback hex to the current team color.
+    // Runtime resolution against team colors happens only in _tickSequence.
     _sampleTrackAt(trackKey, entries, t) {
         if (entries.length === 0) return undefined;
         if (entries.length === 1) return entries[0].value;
@@ -669,7 +687,9 @@ class Sequencer extends EventTarget {
         for (const entries of Object.values(seq.tracks)) {
             const src = entries.find(e => sameT(e.t, rt));
             if (!src) continue;
-            entries.push({ t: newT, value: deepClone(src.value), easing: src.easing || 'cubicInOut' });
+            const dup = { t: newT, value: deepClone(src.value), easing: src.easing || 'cubicInOut' };
+            if (src.binding && src.binding !== 'static') dup.binding = src.binding;
+            entries.push(dup);
             entries.sort((a, b) => a.t - b.t);
         }
         this._rebuildKeyframes(seq);
@@ -727,6 +747,16 @@ class Sequencer extends EventTarget {
         const entry = seq.tracks[trackKey].find(e => sameT(e.t, t));
         if (!entry) return;
         entry.value = deepClone(value);
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
+    setTrackEntryBinding(seqId, trackKey, t, binding) {
+        const seq = this.sequences.get(seqId);
+        if (!seq || !seq.tracks[trackKey]) return;
+        const entry = seq.tracks[trackKey].find(e => sameT(e.t, t));
+        if (!entry) return;
+        entry.binding = binding || 'static';
         this._rebuildKeyframes(seq);
         this._emit('seq:update', { id: seqId, spec: seq });
     }
@@ -930,7 +960,7 @@ class Sequencer extends EventTarget {
             if (entries.length === 0) continue;
             const kind = propKindOf(trackKey);
             if (entries.length === 1) {
-                applyTrackValue(trackKey, entries[0].value);
+                applyTrackValue(trackKey, effectiveEntryValue(entries[0]));
                 continue;
             }
             let a = entries[0], b = entries[entries.length - 1];
@@ -941,11 +971,11 @@ class Sequencer extends EventTarget {
                     break;
                 }
             }
-            if (t <= a.t) { applyTrackValue(trackKey, a.value); continue; }
-            if (t >= b.t) { applyTrackValue(trackKey, b.value); continue; }
+            if (t <= a.t) { applyTrackValue(trackKey, effectiveEntryValue(a)); continue; }
+            if (t >= b.t) { applyTrackValue(trackKey, effectiveEntryValue(b)); continue; }
             const u = (t - a.t) / (b.t - a.t);
             const eased = ease(a.easing || 'cubicInOut', u);
-            applyTrackValue(trackKey, interpolateTrackValue(kind, a.value, b.value, eased));
+            applyTrackValue(trackKey, interpolateTrackValue(kind, effectiveEntryValue(a), effectiveEntryValue(b), eased));
         }
     }
 
@@ -960,7 +990,11 @@ class Sequencer extends EventTarget {
             tracks: Object.fromEntries(
                 Object.entries(s.tracks).map(([k, entries]) => [
                     k,
-                    entries.map(e => ({ t: e.t, value: deepClone(e.value), easing: e.easing || 'cubicInOut', locked: !!e.locked }))
+                    entries.map(e => {
+                        const out = { t: e.t, value: deepClone(e.value), easing: e.easing || 'cubicInOut', locked: !!e.locked };
+                        if (e.binding && e.binding !== 'static') out.binding = e.binding;
+                        return out;
+                    })
                 ])
             ),
             // Legacy shape emitted alongside tracks so older readers can still recover data.

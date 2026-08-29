@@ -1,6 +1,10 @@
 import { registry } from './registry.js';
 import { SHADOW_MAP_TYPES, TONE_MAPPING_TYPES, SKYBOX_MAPPINGS } from './registry.js';
 import { t } from '../i18n.js';
+import { bindingSelectHtml, effectiveColor } from './colorBinding.js';
+import { onTeamColorsChange } from '../state/teamColors.js';
+
+let teamColorsSubscribed = false;
 
 const SHADOW_MAP_SIZES = [256, 512, 1024, 2048, 4096];
 
@@ -18,6 +22,16 @@ export function renderWorldPanel() {
     const pane = document.querySelector('.tab-pane[data-tab="world"]');
     if (!pane) return;
     const w = registry.world;
+
+    if (!teamColorsSubscribed) {
+        teamColorsSubscribed = true;
+        onTeamColorsChange(() => {
+            const bgEl = document.querySelector('#worldBgColor');
+            if (bgEl && bgEl !== document.activeElement) {
+                bgEl.value = effectiveColor(registry.world.backgroundColor, registry.world.backgroundColorBinding);
+            }
+        });
+    }
     const hasImage = !!w.skyboxImage;
     const transparent = !!w.transparentBackground;
     const disAttr = transparent ? 'disabled' : '';
@@ -27,7 +41,8 @@ export function renderWorldPanel() {
             <div class="row-body">
                 <div class="skybox-color-row">
                     <label>${t('world.skyboxColor')}
-                        <input type="color" id="worldBgColor" value="${w.backgroundColor}" ${(hasImage || transparent) ? 'disabled' : ''}>
+                        <input type="color" id="worldBgColor" value="${effectiveColor(w.backgroundColor, w.backgroundColorBinding)}" ${(transparent || (w.backgroundColorBinding && w.backgroundColorBinding !== 'static')) ? 'disabled' : ''}>
+                        <span id="worldBgColorBindingSlot">${bindingSelectHtml(w.backgroundColorBinding)}</span>
                     </label>
                     <label><input type="checkbox" id="worldTransparentBg" ${transparent ? 'checked' : ''}> ${t('world.transparent')}</label>
                 </div>
@@ -39,6 +54,10 @@ export function renderWorldPanel() {
                     </div>
                     ${hasImage ? `<img class="skybox-preview" src="${w.skyboxImage}" alt="skybox preview">` : ''}
                     ${hasImage ? `
+                        <label class="slider-row">${t('world.skyboxImageOpacity')}
+                            <input type="range" id="worldSkyboxImageOpacity" min="0" max="1" step="0.01" value="${w.skyboxImageOpacity ?? 1}" ${disAttr}>
+                            <span id="worldSkyboxImageOpacityValue">${((w.skyboxImageOpacity ?? 1) * 100).toFixed(0)}%</span>
+                        </label>
                         <label>${t('world.skyboxMapping')}
                             <select id="worldSkyboxMapping" ${disAttr}>
                                 ${Object.keys(SKYBOX_MAPPINGS).map(name =>
@@ -119,6 +138,11 @@ export function renderWorldPanel() {
     pane.querySelector('#worldBgColor').oninput = (e) => {
         registry.updateWorld({ backgroundColor: e.target.value });
     };
+    const bgBindEl = pane.querySelector('#worldBgColorBindingSlot .color-binding-select');
+    if (bgBindEl) bgBindEl.onchange = (e) => {
+        registry.updateWorld({ backgroundColorBinding: e.target.value });
+        renderWorldPanel();
+    };
 
     const fileInput = pane.querySelector('#worldSkyboxFile');
     pane.querySelector('#worldSkyboxUpload').onclick = () => fileInput.click();
@@ -144,6 +168,13 @@ export function renderWorldPanel() {
     };
     const mappingSel = pane.querySelector('#worldSkyboxMapping');
     if (mappingSel) mappingSel.onchange = (e) => registry.updateWorld({ skyboxMapping: e.target.value });
+    const opacityInput = pane.querySelector('#worldSkyboxImageOpacity');
+    const opacityLabel = pane.querySelector('#worldSkyboxImageOpacityValue');
+    if (opacityInput) opacityInput.oninput = () => {
+        const v = parseFloat(opacityInput.value);
+        opacityLabel.textContent = `${(v * 100).toFixed(0)}%`;
+        registry.updateWorld({ skyboxImageOpacity: v });
+    };
     pane.querySelector('#worldShadowsEnabled').onchange = (e) => {
         registry.updateWorld({ shadowsEnabled: e.target.checked });
     };

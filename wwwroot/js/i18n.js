@@ -69,7 +69,8 @@ const translations = {
         'world.uploadImage': 'Upload image…',
         'world.replaceImage': 'Replace image…',
         'world.clearImage': 'Clear image',
-        'world.imageOverridesColor': 'Image overrides the color when set. For best results use a 2:1 panorama.',
+        'world.imageOverridesColor': 'Image blends with the color at the opacity set below. For best results use a 2:1 panorama.',
+        'world.skyboxImageOpacity': 'Image opacity',
         'world.imageTooLarge': 'Image is too large (max 10 MB).',
         'world.skyboxMapping': 'Mapping',
         'world.transparent': 'Transparent in OBS',
@@ -176,6 +177,14 @@ const translations = {
         'feedback.copyTitle': 'Click to copy',
         'feedback.copied': 'copied',
         'feedback.github': 'GitHub issues →',
+
+        // === color binding ===
+        'colorBinding.title': 'Bind color to team',
+        'colorBinding.static': 'Static',
+        'colorBinding.home': 'Home team',
+        'colorBinding.away': 'Away team',
+        'colorBinding.currentSur': 'Current survivors',
+        'colorBinding.currentHun': 'Current hunter',
     },
 
     zh: {
@@ -243,7 +252,8 @@ const translations = {
         'world.uploadImage': '上传图片…',
         'world.replaceImage': '替换图片…',
         'world.clearImage': '清除图片',
-        'world.imageOverridesColor': '设置图片后将替换颜色。建议使用 2:1 全景图。',
+        'world.imageOverridesColor': '图片会按下方设置的不透明度与颜色混合。建议使用 2:1 全景图。',
+        'world.skyboxImageOpacity': '图片不透明度',
         'world.imageTooLarge': '图片过大（最大 10 MB）。',
         'world.skyboxMapping': '映射',
         'world.transparent': '在 OBS 中透明',
@@ -350,6 +360,14 @@ const translations = {
         'feedback.copyTitle': '点击复制',
         'feedback.copied': '已复制',
         'feedback.github': 'GitHub 问题 →',
+
+        // === color binding ===
+        'colorBinding.title': '将颜色绑定到队伍',
+        'colorBinding.static': '静态',
+        'colorBinding.home': '主队',
+        'colorBinding.away': '客队',
+        'colorBinding.currentSur': '当前求生者',
+        'colorBinding.currentHun': '当前监管者',
     }
 };
 
