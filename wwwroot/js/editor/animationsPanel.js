@@ -1483,31 +1483,36 @@ function propRow(trackKey, inner) {
     `;
 }
 
-function liveCameraSection(kf) {
+// Skip rows whose track has no entries — reading spec values from an empty snapshot would throw.
+function propRowIf(seq, trackKey, inner) {
+    return (seq.tracks?.[trackKey]?.length > 0) ? propRow(trackKey, inner) : '';
+}
+
+function liveCameraSection(kf, seq) {
     const c = kf.snapshot.liveCamera;
     if (!c) return '';
     return `
         <div class="kf-section">
             <div class="kf-section-title">${t('cameras.live')}</div>
-            ${propRow('liveCamera.position', `
+            ${c.position ? propRowIf(seq, 'liveCamera.position', `
                 <label>${t('cameras.position')}
                     <input type="number" step="0.1" value="${c.position[0]}" data-path="liveCamera.position.0">
                     <input type="number" step="0.1" value="${c.position[1]}" data-path="liveCamera.position.1">
                     <input type="number" step="0.1" value="${c.position[2]}" data-path="liveCamera.position.2">
                 </label>
-            `)}
-            ${propRow('liveCamera.rotation', `
+            `) : ''}
+            ${c.rotation ? propRowIf(seq, 'liveCamera.rotation', `
                 <label>${t('cameras.rotationDeg')}
                     <input type="number" step="1" value="${(c.rotation[0] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.0" data-deg>
                     <input type="number" step="1" value="${(c.rotation[1] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.1" data-deg>
                     <input type="number" step="1" value="${(c.rotation[2] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.2" data-deg>
                 </label>
-            `)}
-            ${propRow('liveCamera.fov', `
+            `) : ''}
+            ${typeof c.fov === 'number' ? propRowIf(seq, 'liveCamera.fov', `
                 <label>${t('cameras.fov')}
                     <input type="number" step="1" min="10" max="120" value="${c.fov}" data-path="liveCamera.fov">
                 </label>
-            `)}
+            `) : ''}
         </div>
     `;
 }
@@ -1528,48 +1533,44 @@ function lightSection(kf, lightId, seq) {
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_LIGHT} ${label} <span class="muted">(${lightId})</span></div>
-            ${propRow(tk('intensity'), `
+            ${typeof l.intensity === 'number' ? propRowIf(seq, tk('intensity'), `
                 <label>${t('lights.intensity')}
                     <input type="number" step="1" min="0" value="${l.intensity}" data-path="lights.${lightId}.intensity">
                 </label>
-            `)}
-            ${propRow(tk('color'), `
+            `) : ''}
+            ${l.color ? propRowIf(seq, tk('color'), `
                 <label>${t('lights.color')}
                     <input type="color" value="${colorShown}" data-path="lights.${lightId}.color" ${colorBound ? 'disabled' : ''}>
                     ${bindingSelectHtml(colorBinding)}
                 </label>
-            `)}
-            ${showPos ? `
-                ${propRow(tk('position'), `
-                    <label>${t('cameras.position')}
-                        <input type="number" step="0.1" value="${l.position[0]}" data-path="lights.${lightId}.position.0">
-                        <input type="number" step="0.1" value="${l.position[1]}" data-path="lights.${lightId}.position.1">
-                        <input type="number" step="0.1" value="${l.position[2]}" data-path="lights.${lightId}.position.2">
-                    </label>
-                `)}
-                ${propRow(tk('target'), `
-                    <label>${t('lights.target')}
-                        <input type="number" step="0.1" value="${l.target[0]}" data-path="lights.${lightId}.target.0">
-                        <input type="number" step="0.1" value="${l.target[1]}" data-path="lights.${lightId}.target.1">
-                        <input type="number" step="0.1" value="${l.target[2]}" data-path="lights.${lightId}.target.2">
-                    </label>
-                `)}
-            ` : ''}
-            ${isSpot ? `
-                ${propRow(tk('extras'), `
-                    <label>${t('lights.angle')}°
-                        <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
-                    </label>
-                    <label>${t('lights.penumbra')}
-                        <input type="number" step="0.05" min="0" max="1" value="${l.extras?.penumbra ?? 0}" data-path="lights.${lightId}.extras.penumbra">
-                    </label>
-                `)}
-            ` : ''}
+            `) : ''}
+            ${showPos && l.position ? propRowIf(seq, tk('position'), `
+                <label>${t('cameras.position')}
+                    <input type="number" step="0.1" value="${l.position[0]}" data-path="lights.${lightId}.position.0">
+                    <input type="number" step="0.1" value="${l.position[1]}" data-path="lights.${lightId}.position.1">
+                    <input type="number" step="0.1" value="${l.position[2]}" data-path="lights.${lightId}.position.2">
+                </label>
+            `) : ''}
+            ${showPos && l.target ? propRowIf(seq, tk('target'), `
+                <label>${t('lights.target')}
+                    <input type="number" step="0.1" value="${l.target[0]}" data-path="lights.${lightId}.target.0">
+                    <input type="number" step="0.1" value="${l.target[1]}" data-path="lights.${lightId}.target.1">
+                    <input type="number" step="0.1" value="${l.target[2]}" data-path="lights.${lightId}.target.2">
+                </label>
+            `) : ''}
+            ${isSpot && l.extras ? propRowIf(seq, tk('extras'), `
+                <label>${t('lights.angle')}°
+                    <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
+                </label>
+                <label>${t('lights.penumbra')}
+                    <input type="number" step="0.05" min="0" max="1" value="${l.extras?.penumbra ?? 0}" data-path="lights.${lightId}.extras.penumbra">
+                </label>
+            `) : ''}
         </div>
     `;
 }
 
-function slotSection(kf, slotId) {
+function slotSection(kf, slotId, seq) {
     const s = kf.snapshot.slots?.[slotId];
     if (!s) return '';
     const spec = registry.getSlot(slotId);
@@ -1578,30 +1579,30 @@ function slotSection(kf, slotId) {
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_SLOT} ${label} <span class="muted">(${slotId})</span></div>
-            ${propRow(tk('position'), `
+            ${s.position ? propRowIf(seq, tk('position'), `
                 <label>${t('characters.position')}
                     <input type="number" step="0.1" value="${s.position[0]}" data-path="slots.${slotId}.position.0">
                     <input type="number" step="0.1" value="${s.position[1]}" data-path="slots.${slotId}.position.1">
                     <input type="number" step="0.1" value="${s.position[2]}" data-path="slots.${slotId}.position.2">
                 </label>
-            `)}
-            ${propRow(tk('rotation'), `
+            `) : ''}
+            ${s.rotation ? propRowIf(seq, tk('rotation'), `
                 <label>${t('characters.rotation')}°
                     <input type="number" step="1" value="${(s.rotation[0] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.0" data-deg>
                     <input type="number" step="1" value="${(s.rotation[1] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.1" data-deg>
                     <input type="number" step="1" value="${(s.rotation[2] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.2" data-deg>
                 </label>
-            `)}
-            ${propRow(tk('scale'), `
+            `) : ''}
+            ${s.scale ? propRowIf(seq, tk('scale'), `
                 <label>${t('characters.scale')}
                     <input type="number" step="0.05" min="0.01" value="${s.scale[0]}" data-path="slots.${slotId}.scale.uniform">
                 </label>
-            `)}
+            `) : ''}
         </div>
     `;
 }
 
-function assetSection(kf, assetId) {
+function assetSection(kf, assetId, seq) {
     const a = kf.snapshot.assets?.[assetId];
     if (!a) return '';
     const spec = registry.getAsset(assetId)?.spec;
@@ -1610,32 +1611,32 @@ function assetSection(kf, assetId) {
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_ASSET} ${name} <span class="muted">(${assetId})</span></div>
-            ${propRow(tk('position'), `
+            ${a.position ? propRowIf(seq, tk('position'), `
                 <label>${t('assets.pos')}
                     <input type="number" step="0.1" value="${a.position[0]}" data-path="assets.${assetId}.position.0">
                     <input type="number" step="0.1" value="${a.position[1]}" data-path="assets.${assetId}.position.1">
                     <input type="number" step="0.1" value="${a.position[2]}" data-path="assets.${assetId}.position.2">
                 </label>
-            `)}
-            ${propRow(tk('rotation'), `
+            `) : ''}
+            ${a.rotation ? propRowIf(seq, tk('rotation'), `
                 <label>${t('assets.rotationDeg')}
                     <input type="number" step="1" value="${(a.rotation[0] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.0" data-deg>
                     <input type="number" step="1" value="${(a.rotation[1] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.1" data-deg>
                     <input type="number" step="1" value="${(a.rotation[2] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.2" data-deg>
                 </label>
-            `)}
-            ${propRow(tk('scale'), `
+            `) : ''}
+            ${a.scale ? propRowIf(seq, tk('scale'), `
                 <label>${t('assets.scale')}
                     <input type="number" step="0.05" value="${a.scale[0]}" data-path="assets.${assetId}.scale.0">
                     <input type="number" step="0.05" value="${a.scale[1]}" data-path="assets.${assetId}.scale.1">
                     <input type="number" step="0.05" value="${a.scale[2]}" data-path="assets.${assetId}.scale.2">
                 </label>
-            `)}
-            ${propRow(tk('opacity'), `
+            `) : ''}
+            ${typeof a.opacity === 'number' ? propRowIf(seq, tk('opacity'), `
                 <label>${t('assets.opacity')}
                     <input type="number" step="0.05" min="0" max="1" value="${a.opacity ?? 1}" data-path="assets.${assetId}.opacity">
                 </label>
-            `)}
+            `) : ''}
         </div>
     `;
 }
@@ -1768,11 +1769,11 @@ function keyframeRow(seq, kf, prevKf) {
     if (isOpen) {
         const detail = row.querySelector('.kf-detail');
         const sections = [];
-        if (seq.targets.includes('liveCamera')) sections.push(liveCameraSection(kf));
+        if (seq.targets.includes('liveCamera')) sections.push(liveCameraSection(kf, seq));
         for (const target of seq.targets) {
             if (target.startsWith('light:')) sections.push(lightSection(kf, target.slice('light:'.length), seq));
-            if (target.startsWith('slot:')) sections.push(slotSection(kf, target.slice('slot:'.length)));
-            if (target.startsWith('asset:')) sections.push(assetSection(kf, target.slice('asset:'.length)));
+            if (target.startsWith('slot:')) sections.push(slotSection(kf, target.slice('slot:'.length), seq));
+            if (target.startsWith('asset:')) sections.push(assetSection(kf, target.slice('asset:'.length), seq));
         }
         // Easing controls how this keyframe transitions to the NEXT one (ease out).
         const currentEasing = kf.easing || 'cubicInOut';
