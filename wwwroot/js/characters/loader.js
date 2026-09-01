@@ -183,6 +183,10 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
                 model.position.y += customData.yOffset;
                 console.log(`Applied Y-offset for ${folderName}: ${customData.yOffset}`);
             }
+            if (customData && typeof customData.rotationY === 'number') {
+                model.rotation.y += customData.rotationY;
+                console.log(`Applied Y-rotation for ${folderName}: ${customData.rotationY}`);
+            }
         }
 
         requestAnimationFrame(() => {
