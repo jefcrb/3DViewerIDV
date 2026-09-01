@@ -1096,6 +1096,17 @@ function renderKfDiff(seq, fromKf, toKf) {
             }
             if (f.color !== b.color) items.push({ label: 'col', values: b.color });
         }
+    } else if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        const f = from.assets?.[id], b = to.assets?.[id];
+        if (f && b) {
+            addChangedVec3(items, 'pos', f.position, b.position);
+            addChangedVec3(items, 'rot', f.rotation, b.rotation, RAD2DEG, '°');
+            addChangedVec3(items, 'scl', f.scale, b.scale);
+            if (Math.abs((f.opacity ?? 1) - (b.opacity ?? 1)) > 0.001) {
+                items.push({ label: 'op', values: ((b.opacity ?? 1) * 100).toFixed(0) + '%' });
+            }
+        }
     }
     if (!items.length) return '';
     return items.map(it => `
@@ -1213,6 +1224,17 @@ function applySnapshotToRegistry(snapshot, target) {
                 if (Array.isArray(v.scale)) patch.scale = [...v.scale];
                 if (Object.keys(patch).length) registry.updateSlot(id, patch);
             }
+        } else if (target.startsWith('asset:')) {
+            const id = target.slice('asset:'.length);
+            const v = snapshot.assets?.[id];
+            if (v) {
+                const patch = {};
+                if (Array.isArray(v.position)) patch.position = [...v.position];
+                if (Array.isArray(v.rotation)) patch.rotation = [...v.rotation];
+                if (Array.isArray(v.scale)) patch.scale = [...v.scale];
+                if (typeof v.opacity === 'number') patch.opacity = v.opacity;
+                if (Object.keys(patch).length) registry.updateAsset(id, patch);
+            }
         }
     } finally {
         suppressSync = false;
@@ -1225,7 +1247,7 @@ registry.addEventListener('change', (e) => {
     const detail = e.detail;
     if (!detail) return;
     const type = detail.type;
-    if (type !== 'lights:update' && type !== 'slots:update' && type !== 'liveCamera:update') return;
+    if (type !== 'lights:update' && type !== 'slots:update' && type !== 'liveCamera:update' && type !== 'assets:update') return;
 
     for (const [seqId, active] of activePreview) {
         const seq = sequencer.getSequence(seqId);
@@ -1236,7 +1258,8 @@ registry.addEventListener('change', (e) => {
         const matches =
             (type === 'liveCamera:update' && target === 'liveCamera') ||
             (type === 'lights:update' && target === `light:${detail.id}`) ||
-            (type === 'slots:update' && target === `slot:${detail.id}`);
+            (type === 'slots:update' && target === `slot:${detail.id}`) ||
+            (type === 'assets:update' && target === `asset:${detail.id}`);
         if (!matches) continue;
 
         const fresh = captureSnapshot([target]);
@@ -1251,6 +1274,10 @@ registry.addEventListener('change', (e) => {
                 const id = target.slice('slot:'.length);
                 snap.slots = snap.slots || {};
                 snap.slots[id] = fresh.slots[id];
+            } else if (target.startsWith('asset:')) {
+                const id = target.slice('asset:'.length);
+                snap.assets = snap.assets || {};
+                snap.assets[id] = fresh.assets[id];
             }
         });
     }
@@ -1269,13 +1296,15 @@ registry.addEventListener('change', (e) => {
         const matches =
             (type === 'liveCamera:update' && target === 'liveCamera') ||
             (type === 'lights:update' && target === `light:${detail.id}`) ||
-            (type === 'slots:update' && target === `slot:${detail.id}`);
+            (type === 'slots:update' && target === `slot:${detail.id}`) ||
+            (type === 'assets:update' && target === `asset:${detail.id}`);
         if (!matches) return;
         const fresh = captureSnapshot([target]);
         let value;
         if (target === 'liveCamera') value = fresh.liveCamera?.[prop];
         else if (target.startsWith('slot:')) value = fresh.slots?.[target.slice(5)]?.[prop];
         else if (target.startsWith('light:')) value = fresh.lights?.[target.slice(6)]?.[prop];
+        else if (target.startsWith('asset:')) value = fresh.assets?.[target.slice(6)]?.[prop];
         if (value !== undefined) sequencer.setTrackEntryValue(scrubId, trackKey, t, value);
     }
 });
@@ -1305,6 +1334,10 @@ sequencer.addEventListener('seq:update', (e) => {
     const prevKf = idx > 0 ? seq.keyframes[idx - 1] : null;
     showPath(seq, currentKf, prevKf);
 });
+
+// New asset .glb's may add clips after the panel was first rendered; re-render on source changes.
+clipManager.addEventListener('source:add', () => renderAnimationsPanel());
+clipManager.addEventListener('source:remove', () => renderAnimationsPanel());
 
 function findPrevKf(seq, kf) {
     const idx = seq.keyframes.findIndex(k => Math.abs(k.t - kf.t) < 0.001);
@@ -1360,6 +1393,7 @@ function colorToHex(c) {
 const ICON_CAMERA = '▣';
 const ICON_LIGHT  = '✦';
 const ICON_SLOT   = '◆';
+const ICON_ASSET  = '❖';
 
 function targetLabel(target) {
     if (target === 'liveCamera') return `${ICON_CAMERA} Live Camera`;
@@ -1372,6 +1406,11 @@ function targetLabel(target) {
         const id = target.slice('slot:'.length);
         const label = registry.getSlot(id)?.label || id;
         return `${ICON_SLOT} ${label}`;
+    }
+    if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        const name = registry.getAsset(id)?.spec?.name || id;
+        return `${ICON_ASSET} ${name}`;
     }
     return target;
 }
@@ -1562,6 +1601,45 @@ function slotSection(kf, slotId) {
     `;
 }
 
+function assetSection(kf, assetId) {
+    const a = kf.snapshot.assets?.[assetId];
+    if (!a) return '';
+    const spec = registry.getAsset(assetId)?.spec;
+    const name = spec?.name || assetId;
+    const tk = (prop) => `asset:${assetId}.${prop}`;
+    return `
+        <div class="kf-section">
+            <div class="kf-section-title">${ICON_ASSET} ${name} <span class="muted">(${assetId})</span></div>
+            ${propRow(tk('position'), `
+                <label>${t('assets.pos')}
+                    <input type="number" step="0.1" value="${a.position[0]}" data-path="assets.${assetId}.position.0">
+                    <input type="number" step="0.1" value="${a.position[1]}" data-path="assets.${assetId}.position.1">
+                    <input type="number" step="0.1" value="${a.position[2]}" data-path="assets.${assetId}.position.2">
+                </label>
+            `)}
+            ${propRow(tk('rotation'), `
+                <label>${t('assets.rotationDeg')}
+                    <input type="number" step="1" value="${(a.rotation[0] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.0" data-deg>
+                    <input type="number" step="1" value="${(a.rotation[1] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.1" data-deg>
+                    <input type="number" step="1" value="${(a.rotation[2] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.2" data-deg>
+                </label>
+            `)}
+            ${propRow(tk('scale'), `
+                <label>${t('assets.scale')}
+                    <input type="number" step="0.05" value="${a.scale[0]}" data-path="assets.${assetId}.scale.0">
+                    <input type="number" step="0.05" value="${a.scale[1]}" data-path="assets.${assetId}.scale.1">
+                    <input type="number" step="0.05" value="${a.scale[2]}" data-path="assets.${assetId}.scale.2">
+                </label>
+            `)}
+            ${propRow(tk('opacity'), `
+                <label>${t('assets.opacity')}
+                    <input type="number" step="0.05" min="0" max="1" value="${a.opacity ?? 1}" data-path="assets.${assetId}.opacity">
+                </label>
+            `)}
+        </div>
+    `;
+}
+
 function resolvePath(snapshot, path) {
     const parts = path.split('.');
     let node = snapshot;
@@ -1694,6 +1772,7 @@ function keyframeRow(seq, kf, prevKf) {
         for (const target of seq.targets) {
             if (target.startsWith('light:')) sections.push(lightSection(kf, target.slice('light:'.length), seq));
             if (target.startsWith('slot:')) sections.push(slotSection(kf, target.slice('slot:'.length)));
+            if (target.startsWith('asset:')) sections.push(assetSection(kf, target.slice('asset:'.length)));
         }
         // Easing controls how this keyframe transitions to the NEXT one (ease out).
         const currentEasing = kf.easing || 'cubicInOut';
@@ -1723,6 +1802,13 @@ function keyframeRow(seq, kf, prevKf) {
     return row;
 }
 
+function compatibleTargets(target) {
+    if (!target) return [];
+    if (target === 'liveCamera') return ['liveCamera'];
+    const prefix = target.slice(0, target.indexOf(':') + 1);
+    return availableTargets().filter(t => t.startsWith(prefix));
+}
+
 function targetSection(seq) {
     const target = seq.targets[0];
     const hasKeyframes = seq.keyframes.length > 0;
@@ -1730,7 +1816,6 @@ function targetSection(seq) {
         ? t('animations.resetTitle')
         : t('animations.noKeyframesYet');
 
-    // Target is locked at sequence creation; to retarget, delete and recreate.
     if (!target) {
         return `
             <label>${t('animations.animating')}</label>
@@ -1740,11 +1825,19 @@ function targetSection(seq) {
         `;
     }
 
+    const siblings = compatibleTargets(target);
+    const canRetarget = siblings.length > 1;
+    const labelHtml = canRetarget
+        ? `<select class="target-retarget" title="${t('animations.retargetTitle')}">
+              ${siblings.map(s => `<option value="${s}" ${s === target ? 'selected' : ''}>${targetLabel(s)}</option>`).join('')}
+           </select>`
+        : `<span class="target-chip-label">${targetLabel(target)}</span>`;
+
     return `
         <label>${t('animations.animating')}</label>
         <div class="target-list">
             <span class="target-chip" data-target="${target}" title="${t('animations.attachGizmo')}">
-                <span class="target-chip-label">${targetLabel(target)}</span>
+                ${labelHtml}
                 <button class="target-reset" data-target="${target}" title="${resetTitle}" ${hasKeyframes ? '' : 'disabled'}>↺</button>
             </span>
         </div>
@@ -1881,8 +1974,19 @@ function sequenceRow(spec) {
 
     row.querySelectorAll('.target-chip').forEach(chip => {
         chip.onclick = (e) => {
-            if (e.target.closest('.target-reset')) return;
+            if (e.target.closest('.target-reset, .target-retarget')) return;
             selectTarget(chip.dataset.target);
+        };
+    });
+    row.querySelectorAll('.target-retarget').forEach(sel => {
+        sel.onchange = (e) => {
+            e.stopPropagation();
+            const newTarget = sel.value;
+            if (!newTarget || newTarget === spec.targets[0]) return;
+            if (sequencer.retargetSequence(spec.id, newTarget)) {
+                selectTarget(newTarget);
+                renderAnimationsPanel();
+            }
         };
     });
     row.querySelectorAll('.target-reset').forEach(btn => {
@@ -1955,7 +2059,7 @@ function clipRow(clip) {
     row.innerHTML = `
         <div class="row-head">
             <span class="name-input" style="flex:1;padding:3px 6px;font-size:11px;color:#fff;">
-                ${ICON_CLIP} ${clip.name}
+                ${ICON_CLIP} ${clip.localName || clip.name}
             </span>
             <span class="seq-duration muted">${clip.duration.toFixed(2)}s</span>
             <button class="play-btn" title="${playing ? t('clips.stopTitle') : t('clips.playTitle')}">${playing ? '■' : '▶'}</button>
@@ -2048,7 +2152,8 @@ function clipRow(clip) {
 }
 
 function renderClipsSection(pane) {
-    const clips = clipManager.listClips();
+    // Scene-only; asset clips live under their asset in the Assets tab.
+    const clips = clipManager.listClips().filter(c => c.sourceId === 'scene');
 
     const heading = document.createElement('div');
     heading.className = 'editor-section-heading';

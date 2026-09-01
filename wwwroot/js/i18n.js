@@ -24,11 +24,28 @@ const translations = {
         'header.saveTitle': 'Save all (auto-saves on change)',
 
         // === tab labels ===
+        'tabs.assets': 'Assets',
         'tabs.lights': 'Lights',
         'tabs.characters': 'Characters',
         'tabs.cameras': 'Cameras',
         'tabs.world': 'World',
         'tabs.animations': 'Animations (BETA)',
+
+        // === assets panel ===
+        'assets.upload': '+ Upload asset',
+        'assets.uploadFailed': 'Upload failed.',
+        'assets.loading': 'Loading…',
+        'assets.selectTitle': 'Attach gizmo',
+        'assets.duplicateTitle': 'Duplicate asset',
+        'assets.removeTitle': 'Remove asset',
+        'assets.pos': 'Pos',
+        'assets.rotationDeg': 'Rotation (deg)',
+        'assets.scale': 'Scale',
+        'assets.opacity': 'Opacity',
+        'assets.builtInAnimations': 'Built-in animations',
+        'assets.noClips': 'This model has no baked animations.',
+        'assets.clipOne': 'animation',
+        'assets.clipMany': 'animations',
 
         // === lights panel ===
         'lights.addLight': '+ Add Light',
@@ -96,6 +113,7 @@ const translations = {
         'animations.stopAll': '■ Stop All',
         'animations.animating': 'Animating:',
         'animations.attachGizmo': 'Click to attach gizmo',
+        'animations.retargetTitle': 'Retarget this sequence to a compatible object',
         'animations.resetTitle': 'Jump back to the value in this sequence’s first keyframe',
         'animations.noKeyframesYet': 'No keyframes yet — record one to define a home pose',
         'animations.noTarget': 'No target — recreate the sequence to pick one.',
@@ -157,6 +175,7 @@ const translations = {
         // === built-in glTF clips section ===
         'clips.sectionTitle': 'Built-in clips',
         'clips.none': 'This scene\'s .glb has no baked animations.',
+        'clips.groupScene': 'Scene',
         'clips.duration': 'Duration',
         'clips.speed': 'Speed',
         'clips.loop': 'Loop',
@@ -208,11 +227,28 @@ const translations = {
         'header.saveTitle': '保存全部（更改时自动保存）',
 
         // === tab labels ===
+        'tabs.assets': '资产',
         'tabs.lights': '灯光',
         'tabs.characters': '角色',
         'tabs.cameras': '相机',
         'tabs.world': '世界',
         'tabs.animations': '动画 (测试版)',
+
+        // === assets panel ===
+        'assets.upload': '+ 上传资产',
+        'assets.uploadFailed': '上传失败。',
+        'assets.loading': '正在加载…',
+        'assets.selectTitle': '附加操纵器',
+        'assets.duplicateTitle': '复制资产',
+        'assets.removeTitle': '移除资产',
+        'assets.pos': '位置',
+        'assets.rotationDeg': '旋转（度）',
+        'assets.scale': '缩放',
+        'assets.opacity': '不透明度',
+        'assets.builtInAnimations': '内置动画',
+        'assets.noClips': '此模型不包含内置动画。',
+        'assets.clipOne': '个动画',
+        'assets.clipMany': '个动画',
 
         // === lights panel ===
         'lights.addLight': '+ 添加灯光',
@@ -280,6 +316,7 @@ const translations = {
         'animations.stopAll': '■ 全部停止',
         'animations.animating': '动画对象：',
         'animations.attachGizmo': '点击附加控件',
+        'animations.retargetTitle': '将此序列重新定向到兼容的对象',
         'animations.resetTitle': '跳回此动画第一个关键帧的值',
         'animations.noKeyframesYet': '还没有关键帧 — 记录一个以定义起始姿态',
         'animations.noTarget': '无目标 — 重新创建动画以选择目标。',
@@ -341,6 +378,7 @@ const translations = {
         // === built-in glTF clips section ===
         'clips.sectionTitle': '内置动画片段',
         'clips.none': '当前场景的 .glb 文件不包含内置动画。',
+        'clips.groupScene': '场景',
         'clips.duration': '时长',
         'clips.speed': '速度',
         'clips.loop': '循环',

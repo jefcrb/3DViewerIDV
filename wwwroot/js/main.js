@@ -101,6 +101,18 @@ function animate(currentTime) {
 
         registry.init(scene, liveCamera, renderer);
 
+        // Wire clipManager BEFORE hydrate so async asset .glb loads can register their clips
+        // even if they complete during the awaits that follow.
+        registry.addEventListener('assets:loaded', (e) => {
+            const { id, spec, root, animations } = e.detail;
+            if (animations && animations.length) {
+                clipManager.addSource(`asset:${id}`, root, animations, spec.name || id);
+            }
+        });
+        registry.addEventListener('assets:remove', (e) => {
+            clipManager.removeSource(`asset:${e.detail.id}`);
+        });
+
         if (settings?.editor) {
             registry.hydrate(settings.editor);
         }

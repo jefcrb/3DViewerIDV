@@ -464,6 +464,90 @@ body select option {
     gap: 6px;
 }
 
+.asset-clips-section {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #2c2c2c;
+}
+.asset-clips-heading {
+    color: #8a8a8a;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.asset-clip {
+    background: #171717;
+    border: 1px solid #2c2c2c;
+    border-radius: 4px;
+    padding: 6px;
+    margin-top: 4px;
+}
+.asset-clip-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+.asset-clip.open .asset-clip-head { margin-bottom: 4px; }
+.asset-clip-caret {
+    color: #7a7a7a;
+    font-size: 10px;
+    width: 10px;
+    text-align: center;
+}
+.asset-clip-summary {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    font-size: 10px;
+    color: #8a8a8a;
+}
+.asset-clip-summary-label { margin-right: 2px; }
+.asset-clip-name {
+    flex: 1;
+    color: #e5e5e5;
+    font-size: 11px;
+    font-weight: 500;
+}
+.asset-clip-duration {
+    font-size: 10px;
+}
+.asset-clip-play {
+    background: #2c2c2c;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.asset-clip-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.asset-clip-body .trigger-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+.asset-clip-body .trigger-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: #232323;
+    border: 1px solid #3c3c3c;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: #b3b3b3;
+    cursor: pointer;
+}
+
 .editor-row {
     background: #1e1e1e;
     border: 1px solid #3c3c3c;
@@ -1636,6 +1720,19 @@ select.color-binding-select {
 .target-chip .target-chip-label {
     pointer-events: none;
 }
+.target-chip .target-retarget {
+    background-color: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    font-size: 11px;
+    padding: 2px 20px 2px 6px;
+    background-position: right 5px center;
+    cursor: pointer;
+    max-width: 180px;
+    margin: -1px 0;
+}
+.target-chip .target-retarget:hover { border-color: #5a5a5a; }
+.target-chip:hover .target-retarget { border-color: #5a5a5a; }
 .target-chip .target-reset,
 .target-chip .target-remove {
     background: transparent;

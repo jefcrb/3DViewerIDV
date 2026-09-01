@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { DEV } from '../config.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DEV, SCENE_ID } from '../config.js';
 import { getTeamColor, onTeamColorsChange } from '../state/teamColors.js';
 
 // Single source of truth for editable scene objects. Mutations emit change events.
@@ -139,6 +140,7 @@ class Registry extends EventTarget {
         this.rendererRef = null;
         this.lights = new Map();
         this.slots = new Map();
+        this.assets = new Map();
         this.liveCamera = {
             position: [8, 6, 8],
             rotation: [0, 0, 0],
@@ -651,10 +653,119 @@ class Registry extends EventTarget {
         this._skyboxCanvasCtx = null;
     }
 
+    // ---------- Assets (user-uploaded GLB/GLTF props) ----------
+
+    _normalizeAssetSpec(spec) {
+        return {
+            id: spec.id,
+            name: spec.name || spec.filename || spec.id,
+            filename: spec.filename,
+            position: vecToArr(spec.position ?? [0, 0, 0]),
+            rotation: vecToArr(spec.rotation ?? [0, 0, 0]),
+            scale: vecToArr(spec.scale ?? [1, 1, 1]),
+            opacity: typeof spec.opacity === 'number' ? Math.max(0, Math.min(1, spec.opacity)) : 1
+        };
+    }
+
+    addAsset(spec) {
+        const id = spec.id || newId('asset');
+        const normalized = this._normalizeAssetSpec({ ...spec, id });
+        const entry = { spec: normalized, root: null, animations: [], loading: true };
+        this.assets.set(id, entry);
+        this.emit('assets:add', { id, spec: normalized });
+        this._loadAssetGltf(entry);
+        return id;
+    }
+
+    _loadAssetGltf(entry) {
+        const url = `./scenes/${SCENE_ID}/assets/${entry.spec.filename}`;
+        new GLTFLoader().load(url, (gltf) => {
+            if (!this.assets.has(entry.spec.id)) return; // removed while loading
+            const root = gltf.scene;
+            root.userData.assetId = entry.spec.id;
+            root.traverse(o => {
+                if (o.isMesh) {
+                    o.castShadow = true;
+                    o.receiveShadow = true;
+                    if (o.material) {
+                        // Clone so opacity edits don't mutate cached materials from shared gltfs.
+                        o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+                    }
+                }
+            });
+            entry.root = root;
+            entry.animations = Array.isArray(gltf.animations) ? gltf.animations : [];
+            entry.loading = false;
+            this._applyAssetSpec(entry, entry.spec);
+            this.scene.add(root);
+            this.emit('assets:loaded', { id: entry.spec.id, spec: entry.spec, root, animations: entry.animations });
+        }, undefined, (err) => {
+            console.error(`Failed to load asset ${entry.spec.filename}:`, err);
+            entry.loading = false;
+        });
+    }
+
+    _applyAssetSpec(entry, spec) {
+        const root = entry.root;
+        if (!root) return;
+        root.position.set(...spec.position);
+        root.rotation.set(...spec.rotation);
+        root.scale.set(...spec.scale);
+        this._applyAssetOpacity(root, spec.opacity);
+    }
+
+    _applyAssetOpacity(root, opacity) {
+        const o = Math.max(0, Math.min(1, opacity));
+        root.traverse(node => {
+            if (!node.material) return;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach(m => {
+                m.transparent = o < 1;
+                m.opacity = o;
+                m.depthWrite = o >= 1;
+                m.needsUpdate = true;
+            });
+        });
+    }
+
+    removeAsset(id) {
+        const entry = this.assets.get(id);
+        if (!entry) return;
+        if (entry.root) {
+            this.scene.remove(entry.root);
+            entry.root.traverse(node => {
+                if (node.geometry) node.geometry.dispose();
+                if (node.material) {
+                    const mats = Array.isArray(node.material) ? node.material : [node.material];
+                    mats.forEach(m => m.dispose && m.dispose());
+                }
+            });
+        }
+        this.assets.delete(id);
+        this.emit('assets:remove', { id, filename: entry.spec.filename });
+    }
+
+    updateAsset(id, partial) {
+        const entry = this.assets.get(id);
+        if (!entry) return;
+        entry.spec = this._normalizeAssetSpec({ ...entry.spec, ...partial });
+        this._applyAssetSpec(entry, entry.spec);
+        this.emit('assets:update', { id, spec: entry.spec, root: entry.root });
+    }
+
+    getAsset(id) {
+        return this.assets.get(id);
+    }
+
+    listAssets() {
+        return Array.from(this.assets.values()).map(e => e.spec);
+    }
+
     serialize() {
         return {
             lights: this.listLights(),
             slots: this.listSlots(),
+            assets: this.listAssets(),
             liveCamera: { ...this.liveCamera },
             world: { ...this.world }
         };
@@ -664,6 +775,7 @@ class Registry extends EventTarget {
         if (!data) return;
         for (const id of Array.from(this.lights.keys())) this.removeLight(id);
         for (const id of Array.from(this.slots.keys())) this.removeSlot(id);
+        for (const id of Array.from(this.assets.keys())) this.removeAsset(id);
 
         // World first so shadow settings are live when lights are created.
         if (data.world) {
@@ -675,6 +787,9 @@ class Registry extends EventTarget {
         }
         if (Array.isArray(data.slots)) {
             data.slots.forEach(spec => this.addSlot(spec));
+        }
+        if (Array.isArray(data.assets)) {
+            data.assets.forEach(spec => this.addAsset(spec));
         }
         if (data.liveCamera) {
             this.updateLiveCamera(data.liveCamera);
