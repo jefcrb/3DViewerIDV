@@ -86,12 +86,15 @@ export function createLiveCameraHelper(liveCamera) {
 
 export { setupStudioLighting } from '../customization/lighting.js';
 
-export function setupWindowResize(cameras, renderer) {
+export function setupWindowResize(cameras, renderer, onResize) {
     window.addEventListener('resize', () => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
         cameras.forEach(cam => {
-            cam.aspect = window.innerWidth / window.innerHeight;
+            cam.aspect = w / h;
             cam.updateProjectionMatrix();
         });
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(w, h);
+        if (onResize) onResize(w, h);
     });
 }

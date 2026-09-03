@@ -3,6 +3,7 @@ import { SHADOW_MAP_TYPES, TONE_MAPPING_TYPES, SKYBOX_MAPPINGS } from './registr
 import { t } from '../i18n.js';
 import { bindingSelectHtml, effectiveColor } from './colorBinding.js';
 import { onTeamColorsChange } from '../state/teamColors.js';
+import { FILTER_TYPES } from '../scene/postFx.js';
 
 let teamColorsSubscribed = false;
 
@@ -14,6 +15,92 @@ function readFileAsDataURL(file) {
         r.onload = () => resolve(r.result);
         r.onerror = () => reject(r.error);
         r.readAsDataURL(file);
+    });
+}
+
+function filtersMarkup(list) {
+    if (!list.length) {
+        return `<div class="hint" data-filter-empty>${t('world.addFilter').replace(/^\+ /, '')}…</div>`;
+    }
+    return list.map((f, i) => {
+        const meta = FILTER_TYPES[f.type];
+        if (!meta) return '';
+        const params = { ...(meta.defaults || {}), ...f };
+        return `
+        <div class="filter-row" data-index="${i}">
+            <div class="filter-row-head">
+                <label class="filter-enable"><input type="checkbox" data-role="enabled" ${f.enabled !== false ? 'checked' : ''}></label>
+                <span class="filter-row-name">${t(`world.filterType.${f.type}`)}</span>
+                <button type="button" data-role="up" title="${t('world.filterMoveUp')}" ${i === 0 ? 'disabled' : ''}>▲</button>
+                <button type="button" data-role="down" title="${t('world.filterMoveDown')}" ${i === list.length - 1 ? 'disabled' : ''}>▼</button>
+                <button type="button" data-role="remove" title="${t('world.filterRemove')}">×</button>
+            </div>
+            <div class="filter-row-body">
+                ${meta.params.map(p => `
+                    <label class="slider-row">${t(`world.filterParam.${p.key}`)}
+                        <input type="range" data-param="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${params[p.key]}">
+                        <span data-param-value="${p.key}">${Number(params[p.key]).toFixed(p.precision)}</span>
+                    </label>
+                `).join('')}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function wireFilters(pane) {
+    const list = () => [...(registry.world.postFx || [])];
+    const commit = (arr) => registry.updateWorld({ postFx: arr });
+
+    pane.querySelector('#worldFilterAddBtn').onclick = () => {
+        const type = pane.querySelector('#worldFilterTypeSelect').value;
+        const meta = FILTER_TYPES[type];
+        if (!meta) return;
+        const next = list();
+        next.push({ type, enabled: true, ...(meta.defaults || {}) });
+        commit(next);
+        renderWorldPanel();
+    };
+
+    pane.querySelectorAll('.filter-row').forEach(row => {
+        const idx = parseInt(row.dataset.index);
+        row.querySelector('[data-role="enabled"]').onchange = (e) => {
+            const arr = list();
+            arr[idx] = { ...arr[idx], enabled: e.target.checked };
+            commit(arr);
+        };
+        row.querySelector('[data-role="remove"]').onclick = () => {
+            const arr = list();
+            arr.splice(idx, 1);
+            commit(arr);
+            renderWorldPanel();
+        };
+        const upBtn = row.querySelector('[data-role="up"]');
+        if (upBtn && !upBtn.disabled) upBtn.onclick = () => {
+            const arr = list();
+            [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+            commit(arr);
+            renderWorldPanel();
+        };
+        const downBtn = row.querySelector('[data-role="down"]');
+        if (downBtn && !downBtn.disabled) downBtn.onclick = () => {
+            const arr = list();
+            [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+            commit(arr);
+            renderWorldPanel();
+        };
+        row.querySelectorAll('input[type="range"][data-param]').forEach(input => {
+            const key = input.dataset.param;
+            const meta = FILTER_TYPES[list()[idx].type];
+            const paramMeta = meta.params.find(p => p.key === key);
+            const valSpan = row.querySelector(`[data-param-value="${key}"]`);
+            input.oninput = () => {
+                const v = parseFloat(input.value);
+                valSpan.textContent = v.toFixed(paramMeta.precision);
+                const arr = list();
+                arr[idx] = { ...arr[idx], [key]: v };
+                commit(arr);
+            };
+        });
     });
 }
 
@@ -126,6 +213,20 @@ export function renderWorldPanel() {
                 </label>
             </div>
         </div>
+        <div class="editor-row">
+            <div class="row-head"><strong>${t('world.filters')}</strong></div>
+            <div class="row-body" id="worldFiltersBody">
+                ${filtersMarkup(w.postFx || [])}
+                <div class="add-bar filters-add-bar">
+                    <select id="worldFilterTypeSelect">
+                        ${Object.keys(FILTER_TYPES).map(k =>
+                            `<option value="${k}">${t(`world.filterType.${k}`)}</option>`
+                        ).join('')}
+                    </select>
+                    <button id="worldFilterAddBtn">${t('world.addFilter')}</button>
+                </div>
+            </div>
+        </div>
         <div class="add-bar">
             <span style="color:#b3b3b3; flex:1; font-size:11px;">${t('world.perfHint')}</span>
         </div>
@@ -230,4 +331,6 @@ export function renderWorldPanel() {
         expLabel.textContent = parseFloat(expInput.value).toFixed(2);
         registry.updateWorld({ toneMappingExposure: parseFloat(expInput.value) });
     };
+
+    wireFilters(pane);
 }

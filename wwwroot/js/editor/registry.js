@@ -70,7 +70,10 @@ const WORLD_DEFAULTS = {
     directionalShadowBounds: SHADOW_DEFAULTS.cameraBounds,
     directionalShadowFar: SHADOW_DEFAULTS.far,
     toneMapping: 'ACESFilmic',
-    toneMappingExposure: 1.0
+    toneMappingExposure: 1.0,
+    // Ordered post-processing filter stack; each: { type, enabled, ...params }.
+    // Passes are applied top-to-bottom between the scene RenderPass and OutputPass.
+    postFx: []
 };
 
 function newId(prefix) {
@@ -781,6 +784,9 @@ class Registry extends EventTarget {
         if (data.world) {
             this.world = { ...WORLD_DEFAULTS, ...data.world };
             this._applyWorldSpec();
+            // Emit so subscribers (postFx composer, etc.) see the hydrated state — the
+            // updateWorld path emits, so hydrate should too for symmetry.
+            this.emit('world:update', { spec: { ...this.world } });
         }
         if (Array.isArray(data.lights)) {
             data.lights.forEach(spec => this.addLight(spec));
