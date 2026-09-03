@@ -3,7 +3,7 @@ import { selectTarget } from './editorMode.js';
 import { t } from '../i18n.js';
 import { SCENE_ID } from '../config.js';
 import { clipManager } from '../animation/clips.js';
-import { listKnownEvents, playClip, stopClip } from '../animation/triggers.js';
+import { listKnownEvents, eventLabel, playClip, stopClip } from '../animation/triggers.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -15,7 +15,7 @@ function triggerPills(kind, current, events) {
     return events.map(e => `
         <label class="trigger-pill">
             <input type="checkbox" data-kind="${kind}" value="${e}" ${current.includes(e) ? 'checked' : ''}>
-            ${e}
+            ${eventLabel(e)}
         </label>
     `).join('');
 }
@@ -27,7 +27,7 @@ function clipBlock(clip) {
     const events = listKnownEvents();
     const pillsSummary = (list) => list.length === 0
         ? `<span class="muted">${t('animations.none')}</span>`
-        : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
+        : list.map(s => `<span class="trigger-mini">${eventLabel(s)}</span>`).join('');
     return `
         <div class="asset-clip${isExpanded ? ' open' : ''}" data-clip="${clip.name}">
             <div class="asset-clip-head">

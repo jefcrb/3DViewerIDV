@@ -1,5 +1,6 @@
 import { sequencer } from './sequencer.js';
 import { clipManager } from './clips.js';
+import { t } from '../i18n.js';
 
 const bus = new EventTarget();
 
@@ -43,6 +44,15 @@ export function setFiringAllowed(allowed) {
 
 export function isFiringAllowed() {
     return firingAllowed;
+}
+
+// Human-friendly label for an event id. The id stays as-is in save data (checkbox
+// value=, seq.triggers[], etc.); this is display-only. Falls back to the raw id
+// for user-defined events without a translation entry.
+export function eventLabel(id) {
+    const key = `triggers.${id}`;
+    const val = t(key);
+    return val === key ? id : val;
 }
 
 export function listKnownEvents() {

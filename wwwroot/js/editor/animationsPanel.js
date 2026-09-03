@@ -1,6 +1,6 @@
 import { sequencer, EASING_NAMES, ease, availableTargets, captureSnapshot, applySnapshot as applySnapshotToScene } from '../animation/sequencer.js';
 import { clipManager } from '../animation/clips.js';
-import { listKnownEvents, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
+import { listKnownEvents, eventLabel, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
 import { registry, intToHex } from './registry.js';
 import { selectTarget } from './editorMode.js';
 import { getEditorCameraRef } from './cameraPanel.js';
@@ -1883,12 +1883,12 @@ function sequenceRow(spec) {
 
     const pillsHtml = (list) => list.length === 0
         ? `<span class="muted">${t('animations.none')}</span>`
-        : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
+        : list.map(s => `<span class="trigger-mini">${eventLabel(s)}</span>`).join('');
 
     const triggerPills = (kind, current) => events.map(e => `
         <label class="trigger-pill">
             <input type="checkbox" data-kind="${kind}" value="${e}" ${current.includes(e) ? 'checked' : ''}>
-            ${e}
+            ${eventLabel(e)}
         </label>
     `).join('');
 
@@ -2056,7 +2056,7 @@ function clipTriggerPills(kind, current, events) {
     return events.map(e => `
         <label class="trigger-pill">
             <input type="checkbox" data-kind="${kind}" value="${e}" ${current.includes(e) ? 'checked' : ''}>
-            ${e}
+            ${eventLabel(e)}
         </label>
     `).join('');
 }
@@ -2073,7 +2073,7 @@ function clipRow(clip) {
 
     const pillsHtml = (list) => list.length === 0
         ? `<span class="muted">${t('animations.none')}</span>`
-        : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
+        : list.map(s => `<span class="trigger-mini">${eventLabel(s)}</span>`).join('');
 
     // Head layout mirrors seq-row so the two sections read consistently.
     row.innerHTML = `
