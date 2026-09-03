@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { registry, hexToInt, intToHex } from '../editor/registry.js';
 import { state as characterState } from '../characters/loader.js';
+import { getTeamColor } from '../state/teamColors.js';
 
 function newId(prefix) {
     if (crypto && crypto.randomUUID) return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
@@ -80,6 +81,9 @@ const PROP_KINDS = {
     rotation: 'vec3-slerp',
     fov: 'number',
     intensity: 'number',
+    opacity: 'number',
+    penumbra: 'number',
+    coneOpacity: 'number',
     color: 'color',
     extras: 'extras'
 };
@@ -97,6 +101,36 @@ function splitTrackKey(trackKey) {
     return { target: trackKey.slice(0, dot), prop: trackKey.slice(dot + 1) };
 }
 
+// One of: 'liveCamera', 'light', 'slot', 'asset'. Used to gate retargeting.
+function typeFamily(target) {
+    if (target === 'liveCamera') return 'liveCamera';
+    const colon = target.indexOf(':');
+    return colon < 0 ? target : target.slice(0, colon);
+}
+
+function moveSnapshotBucket(snap, oldTarget, newTarget) {
+    if (!snap) return;
+    if (oldTarget.startsWith('light:')) {
+        const o = oldTarget.slice(6), n = newTarget.slice(6);
+        if (snap.lights && snap.lights[o] !== undefined) {
+            snap.lights[n] = snap.lights[o];
+            if (o !== n) delete snap.lights[o];
+        }
+    } else if (oldTarget.startsWith('slot:')) {
+        const o = oldTarget.slice(5), n = newTarget.slice(5);
+        if (snap.slots && snap.slots[o] !== undefined) {
+            snap.slots[n] = snap.slots[o];
+            if (o !== n) delete snap.slots[o];
+        }
+    } else if (oldTarget.startsWith('asset:')) {
+        const o = oldTarget.slice(6), n = newTarget.slice(6);
+        if (snap.assets && snap.assets[o] !== undefined) {
+            snap.assets[n] = snap.assets[o];
+            if (o !== n) delete snap.assets[o];
+        }
+    }
+}
+
 function interpolateTrackValue(kind, a, b, t) {
     switch (kind) {
         case 'vec3': return lerpVec3(a, b, t);
@@ -108,18 +142,36 @@ function interpolateTrackValue(kind, a, b, t) {
     }
 }
 
+// Resolves an entry's stored value against its team-color binding at playback time.
+// Only affects hex-string values; anything else is returned as-is.
+function effectiveEntryValue(entry) {
+    if (entry && typeof entry.value === 'string' && entry.binding && entry.binding !== 'static') {
+        const bound = getTeamColor(entry.binding);
+        if (bound) return bound;
+    }
+    return entry ? entry.value : undefined;
+}
+
 function captureLight(spec) {
-    return {
+    const out = {
         intensity: spec.intensity,
         color: typeof spec.color === 'string' ? spec.color : intToHex(spec.color),
         position: [...spec.position],
         target: [...spec.target],
         extras: {
             angle: spec.extras?.angle,
-            penumbra: spec.extras?.penumbra,
             distance: spec.extras?.distance
         }
     };
+    if (spec.type === 'Spot') {
+        // Own channels for Spot so the scrub bar shows independent rows.
+        out.penumbra = spec.extras?.penumbra;
+        out.coneOpacity = spec.extras?.coneOpacity;
+    } else {
+        // Non-spot: keep penumbra in extras (legacy shape) — irrelevant to the light anyway.
+        out.extras.penumbra = spec.extras?.penumbra;
+    }
+    return out;
 }
 
 function captureSlot(spec) {
@@ -127,6 +179,15 @@ function captureSlot(spec) {
         position: [...spec.position],
         rotation: [...spec.rotation],
         scale: [...spec.scale]
+    };
+}
+
+function captureAsset(spec) {
+    return {
+        position: [...spec.position],
+        rotation: [...spec.rotation],
+        scale: [...spec.scale],
+        opacity: spec.opacity ?? 1
     };
 }
 
@@ -140,13 +201,14 @@ function captureLiveCamera() {
     };
 }
 
-// Target IDs: "liveCamera", "light:<id>", "slot:<id>". Null/undefined captures all.
+// Target IDs: "liveCamera", "light:<id>", "slot:<id>", "asset:<id>". Null/undefined captures all.
 export function captureSnapshot(targets) {
-    const snapshot = { lights: {}, slots: {}, liveCamera: null };
+    const snapshot = { lights: {}, slots: {}, assets: {}, liveCamera: null };
 
     if (!targets) {
         for (const spec of registry.listLights()) snapshot.lights[spec.id] = captureLight(spec);
         for (const spec of registry.listSlots()) snapshot.slots[spec.id] = captureSlot(spec);
+        for (const spec of registry.listAssets()) snapshot.assets[spec.id] = captureAsset(spec);
         snapshot.liveCamera = captureLiveCamera();
         return snapshot;
     }
@@ -162,6 +224,10 @@ export function captureSnapshot(targets) {
             const id = target.slice('slot:'.length);
             const spec = registry.getSlot(id);
             if (spec) snapshot.slots[id] = captureSlot(spec);
+        } else if (target.startsWith('asset:')) {
+            const id = target.slice('asset:'.length);
+            const entry = registry.getAsset(id);
+            if (entry) snapshot.assets[id] = captureAsset(entry.spec);
         }
     }
     return snapshot;
@@ -171,6 +237,7 @@ export function availableTargets() {
     const all = ['liveCamera'];
     for (const spec of registry.listLights()) all.push(`light:${spec.id}`);
     for (const spec of registry.listSlots()) all.push(`slot:${spec.id}`);
+    for (const spec of registry.listAssets()) all.push(`asset:${spec.id}`);
     return all;
 }
 
@@ -179,11 +246,18 @@ export function availableTargets() {
 const SLOT_PROPS = ['position', 'rotation', 'scale'];
 const CAMERA_PROPS = ['position', 'rotation', 'fov'];
 const LIGHT_PROPS = ['position', 'target', 'intensity', 'color', 'extras'];
+// Spot-only: penumbra + coneOpacity get their own channels so they can be scrubbed independently.
+const LIGHT_PROPS_SPOT = ['position', 'target', 'intensity', 'color', 'extras', 'penumbra', 'coneOpacity'];
+const ASSET_PROPS = ['position', 'rotation', 'scale', 'opacity'];
 
 function propsFor(target) {
     if (target === 'liveCamera') return CAMERA_PROPS;
     if (target.startsWith('slot:')) return SLOT_PROPS;
-    if (target.startsWith('light:')) return LIGHT_PROPS;
+    if (target.startsWith('light:')) {
+        const spec = registry.getLight(target.slice(6))?.spec;
+        return spec?.type === 'Spot' ? LIGHT_PROPS_SPOT : LIGHT_PROPS;
+    }
+    if (target.startsWith('asset:')) return ASSET_PROPS;
     return [];
 }
 
@@ -192,6 +266,7 @@ function readSnapshotProp(snap, target, prop) {
     if (target === 'liveCamera') return snap.liveCamera?.[prop];
     if (target.startsWith('slot:')) return snap.slots?.[target.slice(5)]?.[prop];
     if (target.startsWith('light:')) return snap.lights?.[target.slice(6)]?.[prop];
+    if (target.startsWith('asset:')) return snap.assets?.[target.slice(6)]?.[prop];
     return undefined;
 }
 
@@ -209,6 +284,11 @@ function writeSnapshotProp(snap, target, prop, value) {
         snap.lights = snap.lights || {};
         snap.lights[id] = snap.lights[id] || {};
         snap.lights[id][prop] = value;
+    } else if (target.startsWith('asset:')) {
+        const id = target.slice(6);
+        snap.assets = snap.assets || {};
+        snap.assets[id] = snap.assets[id] || {};
+        snap.assets[id][prop] = value;
     }
 }
 
@@ -225,13 +305,39 @@ function applyLightSnapshot(id, vals) {
     if (vals.color && light.color) light.color.setHex(hexToInt(vals.color));
     if (vals.position && !light.isAmbientLight) light.position.set(...vals.position);
     if (vals.target && light.target) light.target.position.set(...vals.target);
+    // Top-level Spot channels — split out of extras so the scrub bar can key them independently.
+    if (vals.penumbra != null && light.isSpotLight) light.penumbra = vals.penumbra;
+    if (vals.coneOpacity != null) {
+        const o = Math.max(0, Math.min(1, vals.coneOpacity));
+        if (entry.coneMesh?.material?.uniforms?.uOpacity) entry.coneMesh.material.uniforms.uOpacity.value = o;
+        if (entry.spec.extras) entry.spec.extras.coneOpacity = o;
+    }
     if (vals.extras) {
         if (vals.extras.angle != null && light.isSpotLight) light.angle = vals.extras.angle;
         if (vals.extras.penumbra != null && light.isSpotLight) light.penumbra = vals.extras.penumbra;
         if (vals.extras.distance != null && (light.isSpotLight || light.isPointLight)) {
             light.distance = vals.extras.distance;
         }
+        // Cone opacity animates without a spec round-trip; feed the shader uniform directly.
+        if (vals.extras.coneOpacity != null && entry.coneMesh?.material?.uniforms?.uOpacity) {
+            const o = Math.max(0, Math.min(1, vals.extras.coneOpacity));
+            entry.coneMesh.material.uniforms.uOpacity.value = o;
+            if (entry.spec.extras) entry.spec.extras.coneOpacity = o;
+        }
     }
+    // Cone shader/orientation reads from spec normally; sequencer bypasses spec, so pull
+    // color and pose from the live light so the cone follows animated color/position/target.
+    if (light.isSpotLight && entry.coneMesh) registry.syncSpotConeLive(id);
+}
+
+function applyAssetSnapshot(id, vals) {
+    const entry = registry.getAsset(id);
+    const root = entry?.root;
+    if (!root || !vals) return;
+    if (Array.isArray(vals.position)) root.position.set(...vals.position);
+    if (Array.isArray(vals.rotation)) root.rotation.set(vals.rotation[0], vals.rotation[1], vals.rotation[2]);
+    if (Array.isArray(vals.scale)) root.scale.set(...vals.scale);
+    if (typeof vals.opacity === 'number') registry._applyAssetOpacity(root, vals.opacity);
 }
 
 function applySlotSnapshot(id, vals) {
@@ -274,6 +380,9 @@ export function applySnapshot(snapshot) {
     for (const id of Object.keys(snapshot.slots || {})) {
         applySlotSnapshot(id, snapshot.slots[id]);
     }
+    for (const id of Object.keys(snapshot.assets || {})) {
+        applyAssetSnapshot(id, snapshot.assets[id]);
+    }
     if (snapshot.liveCamera) applyLiveCameraSnapshot(snapshot.liveCamera);
 }
 
@@ -285,40 +394,9 @@ function applyTrackValue(trackKey, value) {
         applySlotSnapshot(target.slice(5), { [prop]: value });
     } else if (target.startsWith('light:')) {
         applyLightSnapshot(target.slice(6), { [prop]: value });
+    } else if (target.startsWith('asset:')) {
+        applyAssetSnapshot(target.slice(6), { [prop]: value });
     }
-}
-
-function restoreFromRegistry(animatedKeys) {
-    for (const id of animatedKeys.lights) {
-        const entry = registry.getLight(id);
-        if (entry) registry._applyLightSpec(entry.threeObject, entry.spec);
-    }
-    for (const id of animatedKeys.slots) {
-        const slot = registry.getSlot(id);
-        if (!slot) continue;
-        applySlotSnapshot(id, { position: slot.position, rotation: slot.rotation });
-    }
-    if (animatedKeys.liveCamera) {
-        const cam = registry.liveCameraRef;
-        const spec = registry.liveCamera;
-        if (cam && spec) {
-            cam.position.set(...spec.position);
-            if (spec.rotation) cam.rotation.set(spec.rotation[0], spec.rotation[1], spec.rotation[2]);
-            cam.fov = spec.fov;
-            cam.updateProjectionMatrix();
-        }
-    }
-}
-
-function animatedKeysOfTracks(seq) {
-    const keys = { lights: new Set(), slots: new Set(), liveCamera: false };
-    for (const trackKey of Object.keys(seq.tracks || {})) {
-        const { target } = splitTrackKey(trackKey);
-        if (target === 'liveCamera') keys.liveCamera = true;
-        else if (target.startsWith('slot:')) keys.slots.add(target.slice(5));
-        else if (target.startsWith('light:')) keys.lights.add(target.slice(6));
-    }
-    return { lights: [...keys.lights], slots: [...keys.slots], liveCamera: keys.liveCamera };
 }
 
 function inferTargetsFromTracks(tracks) {
@@ -388,12 +466,16 @@ class Sequencer extends EventTarget {
                 if (!Array.isArray(entries)) continue;
                 tracks[key] = entries
                     .filter(e => e && typeof e.t === 'number' && e.value !== undefined)
-                    .map(e => ({
-                        t: roundT(e.t),
-                        value: deepClone(e.value),
-                        easing: EASING_NAMES.includes(e.easing) ? e.easing : seqLevelEasing,
-                        locked: !!e.locked
-                    }))
+                    .map(e => {
+                        const out = {
+                            t: roundT(e.t),
+                            value: deepClone(e.value),
+                            easing: EASING_NAMES.includes(e.easing) ? e.easing : seqLevelEasing,
+                            locked: !!e.locked
+                        };
+                        if (typeof e.binding === 'string' && e.binding !== 'static') out.binding = e.binding;
+                        return out;
+                    })
                     .sort((a, b) => a.t - b.t);
             }
         } else if (Array.isArray(spec.keyframes)) {
@@ -457,7 +539,7 @@ class Sequencer extends EventTarget {
     // Sampled per-track so the snapshot is complete even for sparse tracks — callers
     // (sidebar kf-detail, applySnapshotToRegistry) assume no missing fields.
     _synthesizeSnapshotAt(seq, t) {
-        const snap = { lights: {}, slots: {}, liveCamera: null };
+        const snap = { lights: {}, slots: {}, assets: {}, liveCamera: null };
         for (const [trackKey, entries] of Object.entries(seq.tracks || {})) {
             if (entries.length === 0) continue;
             const value = this._sampleTrackAt(trackKey, entries, t);
@@ -468,6 +550,9 @@ class Sequencer extends EventTarget {
         return snap;
     }
 
+    // Returns the STORED value (not team-color-resolved) so round-trips through
+    // updateKeyframe don't freeze a bound entry's fallback hex to the current team color.
+    // Runtime resolution against team colors happens only in _tickSequence.
     _sampleTrackAt(trackKey, entries, t) {
         if (entries.length === 0) return undefined;
         if (entries.length === 1) return entries[0].value;
@@ -554,6 +639,35 @@ class Sequencer extends EventTarget {
         Object.assign(cur, partial);
         this._rebuildKeyframes(cur);
         this._emit('seq:update', { id, spec: cur });
+    }
+
+    // Retarget only within the same type family (light↔light, slot↔slot, asset↔asset).
+    // Rewrites track keys and moves snapshot buckets so the sequence plays against the
+    // new target with the exact same values.
+    retargetSequence(id, newTarget) {
+        const seq = this.sequences.get(id);
+        if (!seq || !newTarget) return false;
+        const oldTarget = seq.targets[0];
+        if (!oldTarget || oldTarget === newTarget) return false;
+        if (typeFamily(oldTarget) !== typeFamily(newTarget)) return false;
+
+        const oldPrefix = oldTarget + '.';
+        const newPrefix = newTarget + '.';
+        const nextTracks = {};
+        for (const [k, entries] of Object.entries(seq.tracks || {})) {
+            const newKey = k.startsWith(oldPrefix) ? newPrefix + k.slice(oldPrefix.length) : k;
+            nextTracks[newKey] = entries;
+        }
+        seq.tracks = nextTracks;
+        seq.targets = [newTarget];
+
+        for (const kf of seq.keyframes || []) {
+            moveSnapshotBucket(kf.snapshot, oldTarget, newTarget);
+        }
+
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id, spec: seq });
+        return true;
     }
 
     _ensureTracksForTargets(seq) {
@@ -669,7 +783,9 @@ class Sequencer extends EventTarget {
         for (const entries of Object.values(seq.tracks)) {
             const src = entries.find(e => sameT(e.t, rt));
             if (!src) continue;
-            entries.push({ t: newT, value: deepClone(src.value), easing: src.easing || 'cubicInOut' });
+            const dup = { t: newT, value: deepClone(src.value), easing: src.easing || 'cubicInOut' };
+            if (src.binding && src.binding !== 'static') dup.binding = src.binding;
+            entries.push(dup);
             entries.sort((a, b) => a.t - b.t);
         }
         this._rebuildKeyframes(seq);
@@ -727,6 +843,16 @@ class Sequencer extends EventTarget {
         const entry = seq.tracks[trackKey].find(e => sameT(e.t, t));
         if (!entry) return;
         entry.value = deepClone(value);
+        this._rebuildKeyframes(seq);
+        this._emit('seq:update', { id: seqId, spec: seq });
+    }
+
+    setTrackEntryBinding(seqId, trackKey, t, binding) {
+        const seq = this.sequences.get(seqId);
+        if (!seq || !seq.tracks[trackKey]) return;
+        const entry = seq.tracks[trackKey].find(e => sameT(e.t, t));
+        if (!entry) return;
+        entry.binding = binding || 'static';
         this._rebuildKeyframes(seq);
         this._emit('seq:update', { id: seqId, spec: seq });
     }
@@ -870,7 +996,7 @@ class Sequencer extends EventTarget {
         const runner = this.active.get(id);
         if (!runner) return;
         this.active.delete(id);
-        restoreFromRegistry(animatedKeysOfTracks(runner.sequence));
+        // Freeze at whatever the last tick wrote — consistent with natural completion.
         this._emit('seq:stop', { id });
     }
 
@@ -930,7 +1056,7 @@ class Sequencer extends EventTarget {
             if (entries.length === 0) continue;
             const kind = propKindOf(trackKey);
             if (entries.length === 1) {
-                applyTrackValue(trackKey, entries[0].value);
+                applyTrackValue(trackKey, effectiveEntryValue(entries[0]));
                 continue;
             }
             let a = entries[0], b = entries[entries.length - 1];
@@ -941,11 +1067,11 @@ class Sequencer extends EventTarget {
                     break;
                 }
             }
-            if (t <= a.t) { applyTrackValue(trackKey, a.value); continue; }
-            if (t >= b.t) { applyTrackValue(trackKey, b.value); continue; }
+            if (t <= a.t) { applyTrackValue(trackKey, effectiveEntryValue(a)); continue; }
+            if (t >= b.t) { applyTrackValue(trackKey, effectiveEntryValue(b)); continue; }
             const u = (t - a.t) / (b.t - a.t);
             const eased = ease(a.easing || 'cubicInOut', u);
-            applyTrackValue(trackKey, interpolateTrackValue(kind, a.value, b.value, eased));
+            applyTrackValue(trackKey, interpolateTrackValue(kind, effectiveEntryValue(a), effectiveEntryValue(b), eased));
         }
     }
 
@@ -960,7 +1086,11 @@ class Sequencer extends EventTarget {
             tracks: Object.fromEntries(
                 Object.entries(s.tracks).map(([k, entries]) => [
                     k,
-                    entries.map(e => ({ t: e.t, value: deepClone(e.value), easing: e.easing || 'cubicInOut', locked: !!e.locked }))
+                    entries.map(e => {
+                        const out = { t: e.t, value: deepClone(e.value), easing: e.easing || 'cubicInOut', locked: !!e.locked };
+                        if (e.binding && e.binding !== 'static') out.binding = e.binding;
+                        return out;
+                    })
                 ])
             ),
             // Legacy shape emitted alongside tracks so older readers can still recover data.

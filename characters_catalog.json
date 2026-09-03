@@ -511,6 +511,18 @@
       "name": "阿曼达·加蒂斯",
       "zy": "幻灯师",
       "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/huandengshi/hds_idle.gltf"
+    },
+    {
+      "id": 51,
+      "name": "赫南多·罗梅罗",
+      "zy": "斗牛士",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/dns/dns1.gltf"
+    },
+    {
+      "id": 52,
+      "name": "克莱奥·德克鲁",
+      "zy": "默剧艺人",
+      "modelUrl": "https://id5.res.netease.com/pc/gw/20220408094220/data/role/mjyr/mjyr1.gltf"
     }
   ]
 }

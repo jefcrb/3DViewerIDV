@@ -1,11 +1,12 @@
-import { sequencer, EASING_NAMES, ease, availableTargets, captureSnapshot } from '../animation/sequencer.js';
+import { sequencer, EASING_NAMES, ease, availableTargets, captureSnapshot, applySnapshot as applySnapshotToScene } from '../animation/sequencer.js';
 import { clipManager } from '../animation/clips.js';
-import { listKnownEvents, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
+import { listKnownEvents, eventLabel, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
 import { registry, intToHex } from './registry.js';
 import { selectTarget } from './editorMode.js';
 import { getEditorCameraRef } from './cameraPanel.js';
 import { showPath, hidePath } from './pathPreview.js';
 import { t } from '../i18n.js';
+import { bindingSelectHtml, effectiveColor } from './colorBinding.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -540,7 +541,7 @@ function propOfTrackKey(trackKey) {
 
 const AXIS_LABELS = ['x', 'y', 'z', 'w'];
 
-function renderTrackValueEditor(trackKey, value, locked = false) {
+function renderTrackValueEditor(trackKey, value, locked = false, binding = 'static') {
     if (value == null) return '';
     const prop = propOfTrackKey(trackKey);
     const dis = locked ? 'disabled' : '';
@@ -559,7 +560,10 @@ function renderTrackValueEditor(trackKey, value, locked = false) {
         return `<input type="number" class="scrub-track-val-input" data-scalar step="0.05" value="${value.toFixed(2)}" ${dis}>`;
     }
     if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) {
-        return `<input type="color" class="scrub-track-val-input" data-scalar value="${value}" ${dis}>`;
+        const bound = binding && binding !== 'static';
+        const shown = effectiveColor(value, binding);
+        const colorDis = (locked || bound) ? 'disabled' : '';
+        return `<input type="color" class="scrub-track-val-input" data-scalar value="${shown}" ${colorDis}>${bindingSelectHtml(binding, { disabled: locked })}`;
     }
     if (typeof value === 'object') {
         return Object.entries(value)
@@ -654,7 +658,7 @@ function renderTrackEditPanel(seq) {
                 ${clockIcon}
                 <input type="number" class="scrub-track-edit-t" step="0.05" min="0" value="${entry.t.toFixed(2)}" ${dis}>s
             </div>
-            <div class="scrub-track-value-edit">${renderTrackValueEditor(trackKey, entry.value, entry.locked)}</div>
+            <div class="scrub-track-value-edit">${renderTrackValueEditor(trackKey, entry.value, entry.locked, entry.binding)}</div>
         </div>`;
 
     return `
@@ -760,6 +764,12 @@ function wireTrackEditPanel(seq) {
                 }
             } else return;
             sequencer.setTrackEntryValue(scrubId, trackKey, entry.t, nextValue);
+            sequencer.sampleAt(scrubId, entry.t);
+        };
+    });
+    scrubBarEl.querySelectorAll('.scrub-inline-selected .color-binding-select').forEach(sel => {
+        sel.onchange = () => {
+            sequencer.setTrackEntryBinding(scrubId, trackKey, entry.t, sel.value);
             sequencer.sampleAt(scrubId, entry.t);
         };
     });
@@ -1086,6 +1096,17 @@ function renderKfDiff(seq, fromKf, toKf) {
             }
             if (f.color !== b.color) items.push({ label: 'col', values: b.color });
         }
+    } else if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        const f = from.assets?.[id], b = to.assets?.[id];
+        if (f && b) {
+            addChangedVec3(items, 'pos', f.position, b.position);
+            addChangedVec3(items, 'rot', f.rotation, b.rotation, RAD2DEG, '°');
+            addChangedVec3(items, 'scl', f.scale, b.scale);
+            if (Math.abs((f.opacity ?? 1) - (b.opacity ?? 1)) > 0.001) {
+                items.push({ label: 'op', values: ((b.opacity ?? 1) * 100).toFixed(0) + '%' });
+            }
+        }
     }
     if (!items.length) return '';
     return items.map(it => `
@@ -1169,44 +1190,25 @@ function updatePlayheadAndTime() {
 // Set while the panel writes to the registry, to skip the sync listener and avoid feedback loops.
 let suppressSync = false;
 
+// Apply a preview/keyframe snapshot to the three.js scene ONLY — never to registry specs.
+// This keeps preview state fully separated from the "static" state that gets saved to disk.
+// Panel inputs on lights/slots/etc show static spec values, unaffected by preview.
 function applySnapshotToRegistry(snapshot, target) {
     if (!snapshot || !target) return;
-    suppressSync = true;
-    try {
-        if (target === 'liveCamera' && snapshot.liveCamera) {
-            const c = snapshot.liveCamera;
-            const patch = {};
-            if (Array.isArray(c.position)) patch.position = [...c.position];
-            if (Array.isArray(c.rotation)) patch.rotation = [...c.rotation];
-            if (typeof c.fov === 'number') patch.fov = c.fov;
-            if (Object.keys(patch).length) registry.updateLiveCamera(patch);
-        } else if (target.startsWith('light:')) {
-            const id = target.slice('light:'.length);
-            const v = snapshot.lights?.[id];
-            const cur = registry.getLight(id)?.spec;
-            if (v && cur) {
-                const patch = {};
-                if (typeof v.intensity === 'number') patch.intensity = v.intensity;
-                if (v.color) patch.color = v.color;
-                if (Array.isArray(v.position)) patch.position = [...v.position];
-                if (Array.isArray(v.target)) patch.target = [...v.target];
-                if (v.extras) patch.extras = { ...(cur.extras || {}), ...v.extras };
-                if (Object.keys(patch).length) registry.updateLight(id, patch);
-            }
-        } else if (target.startsWith('slot:')) {
-            const id = target.slice('slot:'.length);
-            const v = snapshot.slots?.[id];
-            if (v) {
-                const patch = {};
-                if (Array.isArray(v.position)) patch.position = [...v.position];
-                if (Array.isArray(v.rotation)) patch.rotation = [...v.rotation];
-                if (Array.isArray(v.scale)) patch.scale = [...v.scale];
-                if (Object.keys(patch).length) registry.updateSlot(id, patch);
-            }
-        }
-    } finally {
-        suppressSync = false;
+    // Filter the snapshot to just the target so we don't touch other objects.
+    const filtered = { lights: {}, slots: {}, assets: {}, liveCamera: null };
+    if (target === 'liveCamera') filtered.liveCamera = snapshot.liveCamera || null;
+    else if (target.startsWith('light:')) {
+        const id = target.slice('light:'.length);
+        if (snapshot.lights?.[id]) filtered.lights[id] = snapshot.lights[id];
+    } else if (target.startsWith('slot:')) {
+        const id = target.slice('slot:'.length);
+        if (snapshot.slots?.[id]) filtered.slots[id] = snapshot.slots[id];
+    } else if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        if (snapshot.assets?.[id]) filtered.assets[id] = snapshot.assets[id];
     }
+    applySnapshotToScene(filtered);
 }
 
 // While a keyframe is being previewed, scene edits get written back into its snapshot.
@@ -1215,7 +1217,7 @@ registry.addEventListener('change', (e) => {
     const detail = e.detail;
     if (!detail) return;
     const type = detail.type;
-    if (type !== 'lights:update' && type !== 'slots:update' && type !== 'liveCamera:update') return;
+    if (type !== 'lights:update' && type !== 'slots:update' && type !== 'liveCamera:update' && type !== 'assets:update') return;
 
     for (const [seqId, active] of activePreview) {
         const seq = sequencer.getSequence(seqId);
@@ -1226,7 +1228,8 @@ registry.addEventListener('change', (e) => {
         const matches =
             (type === 'liveCamera:update' && target === 'liveCamera') ||
             (type === 'lights:update' && target === `light:${detail.id}`) ||
-            (type === 'slots:update' && target === `slot:${detail.id}`);
+            (type === 'slots:update' && target === `slot:${detail.id}`) ||
+            (type === 'assets:update' && target === `asset:${detail.id}`);
         if (!matches) continue;
 
         const fresh = captureSnapshot([target]);
@@ -1241,6 +1244,10 @@ registry.addEventListener('change', (e) => {
                 const id = target.slice('slot:'.length);
                 snap.slots = snap.slots || {};
                 snap.slots[id] = fresh.slots[id];
+            } else if (target.startsWith('asset:')) {
+                const id = target.slice('asset:'.length);
+                snap.assets = snap.assets || {};
+                snap.assets[id] = fresh.assets[id];
             }
         });
     }
@@ -1259,13 +1266,15 @@ registry.addEventListener('change', (e) => {
         const matches =
             (type === 'liveCamera:update' && target === 'liveCamera') ||
             (type === 'lights:update' && target === `light:${detail.id}`) ||
-            (type === 'slots:update' && target === `slot:${detail.id}`);
+            (type === 'slots:update' && target === `slot:${detail.id}`) ||
+            (type === 'assets:update' && target === `asset:${detail.id}`);
         if (!matches) return;
         const fresh = captureSnapshot([target]);
         let value;
         if (target === 'liveCamera') value = fresh.liveCamera?.[prop];
         else if (target.startsWith('slot:')) value = fresh.slots?.[target.slice(5)]?.[prop];
         else if (target.startsWith('light:')) value = fresh.lights?.[target.slice(6)]?.[prop];
+        else if (target.startsWith('asset:')) value = fresh.assets?.[target.slice(6)]?.[prop];
         if (value !== undefined) sequencer.setTrackEntryValue(scrubId, trackKey, t, value);
     }
 });
@@ -1295,6 +1304,10 @@ sequencer.addEventListener('seq:update', (e) => {
     const prevKf = idx > 0 ? seq.keyframes[idx - 1] : null;
     showPath(seq, currentKf, prevKf);
 });
+
+// New asset .glb's may add clips after the panel was first rendered; re-render on source changes.
+clipManager.addEventListener('source:add', () => renderAnimationsPanel());
+clipManager.addEventListener('source:remove', () => renderAnimationsPanel());
 
 function findPrevKf(seq, kf) {
     const idx = seq.keyframes.findIndex(k => Math.abs(k.t - kf.t) < 0.001);
@@ -1328,6 +1341,17 @@ function deselectKeyframePreview(seq, kf) {
     previewAnchors.delete(seq.id);
 }
 
+// Kept as no-ops for backwards-compat; the registry's static-committed mirrors now
+// guarantee that serialize() returns only user-committed values, so no wrapper needed.
+export let previewSerializeInProgress = false;
+export function isPreviewSerializeInProgress() { return previewSerializeInProgress; }
+
+// Thin passthrough — registry.serialize() reads from the static mirrors, which are
+// only ever updated by explicit user commits. Animation/preview writes to three.js only.
+export function serializeCleanRegistry() {
+    return registry.serialize();
+}
+
 // Defers via setTimeout 0 so cascading renders complete before adding the pulse class.
 function pulseKeyframeRow(seqId, t) {
     setTimeout(() => {
@@ -1350,6 +1374,7 @@ function colorToHex(c) {
 const ICON_CAMERA = '▣';
 const ICON_LIGHT  = '✦';
 const ICON_SLOT   = '◆';
+const ICON_ASSET  = '❖';
 
 function targetLabel(target) {
     if (target === 'liveCamera') return `${ICON_CAMERA} Live Camera`;
@@ -1362,6 +1387,11 @@ function targetLabel(target) {
         const id = target.slice('slot:'.length);
         const label = registry.getSlot(id)?.label || id;
         return `${ICON_SLOT} ${label}`;
+    }
+    if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        const name = registry.getAsset(id)?.spec?.name || id;
+        return `${ICON_ASSET} ${name}`;
     }
     return target;
 }
@@ -1393,22 +1423,35 @@ function diffSummary(seq, kf, prevKf) {
     const parts = [];
     const start = t('animations.startPrefix');
 
+    // Only include fields whose track has entries — snapshot values for empty tracks are
+    // undefined, and reading .toFixed() / etc on them would throw.
     if (target === 'liveCamera') {
         const c = cur.liveCamera;
         if (!c) return '';
         const p = prev?.liveCamera;
-        if (!p) return `${start} · pos ${fmtVec(c.position)} · fov ${Math.round(c.fov)}`;
+        if (!p) {
+            if (Array.isArray(c.position)) parts.push(`pos ${fmtVec(c.position)}`);
+            if (typeof c.fov === 'number') parts.push(`fov ${Math.round(c.fov)}`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
-        if (Math.abs(c.fov - p.fov) > 0.5) parts.push(`fov ${Math.round(c.fov)}`);
+        if (typeof c.fov === 'number' && typeof p.fov === 'number' && Math.abs(c.fov - p.fov) > 0.5) {
+            parts.push(`fov ${Math.round(c.fov)}`);
+        }
     } else if (target.startsWith('light:')) {
         const id = target.slice('light:'.length);
         const c = cur.lights?.[id];
         if (!c) return '';
         const p = prev?.lights?.[id];
-        if (!p) return `${start} · int ${c.intensity.toFixed(2)} · col ${c.color}`;
-        if (Math.abs((c.intensity ?? 0) - (p.intensity ?? 0)) > DIFF_EPS) parts.push(`int ${c.intensity.toFixed(2)}`);
-        if (c.color !== p.color) parts.push(`col ${c.color}`);
+        if (!p) {
+            if (typeof c.intensity === 'number') parts.push(`int ${c.intensity.toFixed(2)}`);
+            if (c.color) parts.push(`col ${c.color}`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
+        if (typeof c.intensity === 'number' && typeof p.intensity === 'number'
+            && Math.abs(c.intensity - p.intensity) > DIFF_EPS) parts.push(`int ${c.intensity.toFixed(2)}`);
+        if (c.color && p.color && c.color !== p.color) parts.push(`col ${c.color}`);
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.target, p.target)) parts.push(`tgt ${fmtVec(c.target)}`);
     } else if (target.startsWith('slot:')) {
@@ -1416,10 +1459,28 @@ function diffSummary(seq, kf, prevKf) {
         const c = cur.slots?.[id];
         if (!c) return '';
         const p = prev?.slots?.[id];
-        if (!p) return `${start} · pos ${fmtVec(c.position)}`;
+        if (!p) {
+            if (Array.isArray(c.position)) parts.push(`pos ${fmtVec(c.position)}`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
         if (arraysDiffer(c.scale, p.scale, 0.005)) parts.push(`scl ${fmtVec(c.scale, 2)}`);
+    } else if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        const c = cur.assets?.[id];
+        if (!c) return '';
+        const p = prev?.assets?.[id];
+        if (!p) {
+            if (Array.isArray(c.position)) parts.push(`pos ${fmtVec(c.position)}`);
+            if (typeof c.opacity === 'number') parts.push(`op ${(c.opacity * 100).toFixed(0)}%`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
+        if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
+        if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
+        if (arraysDiffer(c.scale, p.scale, 0.005)) parts.push(`scl ${fmtVec(c.scale, 2)}`);
+        if (typeof c.opacity === 'number' && typeof p.opacity === 'number'
+            && Math.abs(c.opacity - p.opacity) > DIFF_EPS) parts.push(`op ${(c.opacity * 100).toFixed(0)}%`);
     }
 
     return parts.length ? parts.join(' · ') : t('animations.noChange');
@@ -1434,36 +1495,41 @@ function propRow(trackKey, inner) {
     `;
 }
 
-function liveCameraSection(kf) {
+// Skip rows whose track has no entries — reading spec values from an empty snapshot would throw.
+function propRowIf(seq, trackKey, inner) {
+    return (seq.tracks?.[trackKey]?.length > 0) ? propRow(trackKey, inner) : '';
+}
+
+function liveCameraSection(kf, seq) {
     const c = kf.snapshot.liveCamera;
     if (!c) return '';
     return `
         <div class="kf-section">
             <div class="kf-section-title">${t('cameras.live')}</div>
-            ${propRow('liveCamera.position', `
+            ${c.position ? propRowIf(seq, 'liveCamera.position', `
                 <label>${t('cameras.position')}
                     <input type="number" step="0.1" value="${c.position[0]}" data-path="liveCamera.position.0">
                     <input type="number" step="0.1" value="${c.position[1]}" data-path="liveCamera.position.1">
                     <input type="number" step="0.1" value="${c.position[2]}" data-path="liveCamera.position.2">
                 </label>
-            `)}
-            ${propRow('liveCamera.rotation', `
+            `) : ''}
+            ${c.rotation ? propRowIf(seq, 'liveCamera.rotation', `
                 <label>${t('cameras.rotationDeg')}
                     <input type="number" step="1" value="${(c.rotation[0] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.0" data-deg>
                     <input type="number" step="1" value="${(c.rotation[1] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.1" data-deg>
                     <input type="number" step="1" value="${(c.rotation[2] * RAD2DEG).toFixed(1)}" data-path="liveCamera.rotation.2" data-deg>
                 </label>
-            `)}
-            ${propRow('liveCamera.fov', `
+            `) : ''}
+            ${typeof c.fov === 'number' ? propRowIf(seq, 'liveCamera.fov', `
                 <label>${t('cameras.fov')}
                     <input type="number" step="1" min="10" max="120" value="${c.fov}" data-path="liveCamera.fov">
                 </label>
-            `)}
+            `) : ''}
         </div>
     `;
 }
 
-function lightSection(kf, lightId) {
+function lightSection(kf, lightId, seq) {
     const l = kf.snapshot.lights?.[lightId];
     if (!l) return '';
     const spec = registry.getLight(lightId)?.spec;
@@ -1472,50 +1538,58 @@ function lightSection(kf, lightId) {
     const isSpot = spec?.type === 'Spot';
     const showPos = !isAmbient;
     const tk = (prop) => `light:${lightId}.${prop}`;
+    const colorEntry = seq?.tracks?.[tk('color')]?.find(e => Math.abs(e.t - kf.t) < 0.001);
+    const colorBinding = colorEntry?.binding || 'static';
+    const colorBound = colorBinding !== 'static';
+    const colorShown = effectiveColor(colorToHex(l.color), colorBinding);
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_LIGHT} ${label} <span class="muted">(${lightId})</span></div>
-            ${propRow(tk('intensity'), `
+            ${typeof l.intensity === 'number' ? propRowIf(seq, tk('intensity'), `
                 <label>${t('lights.intensity')}
                     <input type="number" step="1" min="0" value="${l.intensity}" data-path="lights.${lightId}.intensity">
                 </label>
-            `)}
-            ${propRow(tk('color'), `
+            `) : ''}
+            ${l.color ? propRowIf(seq, tk('color'), `
                 <label>${t('lights.color')}
-                    <input type="color" value="${colorToHex(l.color)}" data-path="lights.${lightId}.color">
+                    <input type="color" value="${colorShown}" data-path="lights.${lightId}.color" ${colorBound ? 'disabled' : ''}>
+                    ${bindingSelectHtml(colorBinding)}
                 </label>
-            `)}
-            ${showPos ? `
-                ${propRow(tk('position'), `
-                    <label>${t('cameras.position')}
-                        <input type="number" step="0.1" value="${l.position[0]}" data-path="lights.${lightId}.position.0">
-                        <input type="number" step="0.1" value="${l.position[1]}" data-path="lights.${lightId}.position.1">
-                        <input type="number" step="0.1" value="${l.position[2]}" data-path="lights.${lightId}.position.2">
-                    </label>
-                `)}
-                ${propRow(tk('target'), `
-                    <label>${t('lights.target')}
-                        <input type="number" step="0.1" value="${l.target[0]}" data-path="lights.${lightId}.target.0">
-                        <input type="number" step="0.1" value="${l.target[1]}" data-path="lights.${lightId}.target.1">
-                        <input type="number" step="0.1" value="${l.target[2]}" data-path="lights.${lightId}.target.2">
-                    </label>
-                `)}
-            ` : ''}
-            ${isSpot ? `
-                ${propRow(tk('extras'), `
-                    <label>${t('lights.angle')}°
-                        <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
-                    </label>
-                    <label>${t('lights.penumbra')}
-                        <input type="number" step="0.05" min="0" max="1" value="${l.extras?.penumbra ?? 0}" data-path="lights.${lightId}.extras.penumbra">
-                    </label>
-                `)}
-            ` : ''}
+            `) : ''}
+            ${showPos && l.position ? propRowIf(seq, tk('position'), `
+                <label>${t('cameras.position')}
+                    <input type="number" step="0.1" value="${l.position[0]}" data-path="lights.${lightId}.position.0">
+                    <input type="number" step="0.1" value="${l.position[1]}" data-path="lights.${lightId}.position.1">
+                    <input type="number" step="0.1" value="${l.position[2]}" data-path="lights.${lightId}.position.2">
+                </label>
+            `) : ''}
+            ${showPos && l.target ? propRowIf(seq, tk('target'), `
+                <label>${t('lights.target')}
+                    <input type="number" step="0.1" value="${l.target[0]}" data-path="lights.${lightId}.target.0">
+                    <input type="number" step="0.1" value="${l.target[1]}" data-path="lights.${lightId}.target.1">
+                    <input type="number" step="0.1" value="${l.target[2]}" data-path="lights.${lightId}.target.2">
+                </label>
+            `) : ''}
+            ${isSpot && l.extras ? propRowIf(seq, tk('extras'), `
+                <label>${t('lights.angle')}°
+                    <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
+                </label>
+            `) : ''}
+            ${isSpot ? propRowIf(seq, tk('penumbra'), `
+                <label>${t('lights.penumbra')}
+                    <input type="number" step="0.05" min="0" max="1" value="${l.penumbra ?? 0}" data-path="lights.${lightId}.penumbra">
+                </label>
+            `) : ''}
+            ${isSpot ? propRowIf(seq, tk('coneOpacity'), `
+                <label>${t('lights.coneOpacity')}
+                    <input type="number" step="0.05" min="0" max="1" value="${l.coneOpacity ?? 0.2}" data-path="lights.${lightId}.coneOpacity">
+                </label>
+            `) : ''}
         </div>
     `;
 }
 
-function slotSection(kf, slotId) {
+function slotSection(kf, slotId, seq) {
     const s = kf.snapshot.slots?.[slotId];
     if (!s) return '';
     const spec = registry.getSlot(slotId);
@@ -1524,27 +1598,64 @@ function slotSection(kf, slotId) {
     return `
         <div class="kf-section">
             <div class="kf-section-title">${ICON_SLOT} ${label} <span class="muted">(${slotId})</span></div>
-            ${propRow(tk('position'), `
+            ${s.position ? propRowIf(seq, tk('position'), `
                 <label>${t('characters.position')}
                     <input type="number" step="0.1" value="${s.position[0]}" data-path="slots.${slotId}.position.0">
                     <input type="number" step="0.1" value="${s.position[1]}" data-path="slots.${slotId}.position.1">
                     <input type="number" step="0.1" value="${s.position[2]}" data-path="slots.${slotId}.position.2">
                 </label>
-            `)}
-            ${propRow(tk('rotation'), `
+            `) : ''}
+            ${s.rotation ? propRowIf(seq, tk('rotation'), `
                 <label>${t('characters.rotation')}°
                     <input type="number" step="1" value="${(s.rotation[0] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.0" data-deg>
                     <input type="number" step="1" value="${(s.rotation[1] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.1" data-deg>
                     <input type="number" step="1" value="${(s.rotation[2] * RAD2DEG).toFixed(1)}" data-path="slots.${slotId}.rotation.2" data-deg>
                 </label>
-            `)}
-            ${propRow(tk('scale'), `
+            `) : ''}
+            ${s.scale ? propRowIf(seq, tk('scale'), `
                 <label>${t('characters.scale')}
-                    <input type="number" step="0.05" value="${s.scale[0]}" data-path="slots.${slotId}.scale.0">
-                    <input type="number" step="0.05" value="${s.scale[1]}" data-path="slots.${slotId}.scale.1">
-                    <input type="number" step="0.05" value="${s.scale[2]}" data-path="slots.${slotId}.scale.2">
+                    <input type="number" step="0.05" min="0.01" value="${s.scale[0]}" data-path="slots.${slotId}.scale.uniform">
                 </label>
-            `)}
+            `) : ''}
+        </div>
+    `;
+}
+
+function assetSection(kf, assetId, seq) {
+    const a = kf.snapshot.assets?.[assetId];
+    if (!a) return '';
+    const spec = registry.getAsset(assetId)?.spec;
+    const name = spec?.name || assetId;
+    const tk = (prop) => `asset:${assetId}.${prop}`;
+    return `
+        <div class="kf-section">
+            <div class="kf-section-title">${ICON_ASSET} ${name} <span class="muted">(${assetId})</span></div>
+            ${a.position ? propRowIf(seq, tk('position'), `
+                <label>${t('assets.pos')}
+                    <input type="number" step="0.1" value="${a.position[0]}" data-path="assets.${assetId}.position.0">
+                    <input type="number" step="0.1" value="${a.position[1]}" data-path="assets.${assetId}.position.1">
+                    <input type="number" step="0.1" value="${a.position[2]}" data-path="assets.${assetId}.position.2">
+                </label>
+            `) : ''}
+            ${a.rotation ? propRowIf(seq, tk('rotation'), `
+                <label>${t('assets.rotationDeg')}
+                    <input type="number" step="1" value="${(a.rotation[0] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.0" data-deg>
+                    <input type="number" step="1" value="${(a.rotation[1] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.1" data-deg>
+                    <input type="number" step="1" value="${(a.rotation[2] * RAD2DEG).toFixed(1)}" data-path="assets.${assetId}.rotation.2" data-deg>
+                </label>
+            `) : ''}
+            ${a.scale ? propRowIf(seq, tk('scale'), `
+                <label>${t('assets.scale')}
+                    <input type="number" step="0.05" value="${a.scale[0]}" data-path="assets.${assetId}.scale.0">
+                    <input type="number" step="0.05" value="${a.scale[1]}" data-path="assets.${assetId}.scale.1">
+                    <input type="number" step="0.05" value="${a.scale[2]}" data-path="assets.${assetId}.scale.2">
+                </label>
+            `) : ''}
+            ${typeof a.opacity === 'number' ? propRowIf(seq, tk('opacity'), `
+                <label>${t('assets.opacity')}
+                    <input type="number" step="0.05" min="0" max="1" value="${a.opacity ?? 1}" data-path="assets.${assetId}.opacity">
+                </label>
+            `) : ''}
         </div>
     `;
 }
@@ -1568,6 +1679,15 @@ function bindDetailInputs(container, seq, kf) {
             const path = el.dataset.path;
             const isDeg = el.hasAttribute('data-deg');
             sequencer.updateKeyframe(seq.id, kf.t, (snap) => {
+                // Uniform slot scale: one input drives all three components.
+                if (path.endsWith('.scale.uniform')) {
+                    const parent = resolvePath(snap, path.slice(0, -'.uniform'.length));
+                    if (!parent) return;
+                    const u = parseFloat(el.value);
+                    if (Number.isNaN(u)) return;
+                    parent.parent[parent.key] = [u, u, u];
+                    return;
+                }
                 const target = resolvePath(snap, path);
                 if (!target) return;
                 if (el.type === 'color') {
@@ -1595,6 +1715,16 @@ function bindDetailInputs(container, seq, kf) {
             const trackKey = row?.dataset.trackKey;
             if (!trackKey) return;
             sequencer.removeTrackEntry(seq.id, trackKey, kf.t);
+            renderAnimationsPanel();
+        };
+    });
+    // Color-binding dropdowns live inside the propRow for a color-valued track.
+    container.querySelectorAll('.color-binding-select').forEach(sel => {
+        sel.onchange = () => {
+            const row = sel.closest('.kf-prop-row');
+            const trackKey = row?.dataset.trackKey;
+            if (!trackKey) return;
+            sequencer.setTrackEntryBinding(seq.id, trackKey, kf.t, sel.value);
             renderAnimationsPanel();
         };
     });
@@ -1658,10 +1788,11 @@ function keyframeRow(seq, kf, prevKf) {
     if (isOpen) {
         const detail = row.querySelector('.kf-detail');
         const sections = [];
-        if (seq.targets.includes('liveCamera')) sections.push(liveCameraSection(kf));
+        if (seq.targets.includes('liveCamera')) sections.push(liveCameraSection(kf, seq));
         for (const target of seq.targets) {
-            if (target.startsWith('light:')) sections.push(lightSection(kf, target.slice('light:'.length)));
-            if (target.startsWith('slot:')) sections.push(slotSection(kf, target.slice('slot:'.length)));
+            if (target.startsWith('light:')) sections.push(lightSection(kf, target.slice('light:'.length), seq));
+            if (target.startsWith('slot:')) sections.push(slotSection(kf, target.slice('slot:'.length), seq));
+            if (target.startsWith('asset:')) sections.push(assetSection(kf, target.slice('asset:'.length), seq));
         }
         // Easing controls how this keyframe transitions to the NEXT one (ease out).
         const currentEasing = kf.easing || 'cubicInOut';
@@ -1691,6 +1822,13 @@ function keyframeRow(seq, kf, prevKf) {
     return row;
 }
 
+function compatibleTargets(target) {
+    if (!target) return [];
+    if (target === 'liveCamera') return ['liveCamera'];
+    const prefix = target.slice(0, target.indexOf(':') + 1);
+    return availableTargets().filter(t => t.startsWith(prefix));
+}
+
 function targetSection(seq) {
     const target = seq.targets[0];
     const hasKeyframes = seq.keyframes.length > 0;
@@ -1698,7 +1836,6 @@ function targetSection(seq) {
         ? t('animations.resetTitle')
         : t('animations.noKeyframesYet');
 
-    // Target is locked at sequence creation; to retarget, delete and recreate.
     if (!target) {
         return `
             <label>${t('animations.animating')}</label>
@@ -1708,11 +1845,19 @@ function targetSection(seq) {
         `;
     }
 
+    const siblings = compatibleTargets(target);
+    const canRetarget = siblings.length > 1;
+    const labelHtml = canRetarget
+        ? `<select class="target-retarget" title="${t('animations.retargetTitle')}">
+              ${siblings.map(s => `<option value="${s}" ${s === target ? 'selected' : ''}>${targetLabel(s)}</option>`).join('')}
+           </select>`
+        : `<span class="target-chip-label">${targetLabel(target)}</span>`;
+
     return `
         <label>${t('animations.animating')}</label>
         <div class="target-list">
             <span class="target-chip" data-target="${target}" title="${t('animations.attachGizmo')}">
-                <span class="target-chip-label">${targetLabel(target)}</span>
+                ${labelHtml}
                 <button class="target-reset" data-target="${target}" title="${resetTitle}" ${hasKeyframes ? '' : 'disabled'}>↺</button>
             </span>
         </div>
@@ -1738,12 +1883,12 @@ function sequenceRow(spec) {
 
     const pillsHtml = (list) => list.length === 0
         ? `<span class="muted">${t('animations.none')}</span>`
-        : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
+        : list.map(s => `<span class="trigger-mini">${eventLabel(s)}</span>`).join('');
 
     const triggerPills = (kind, current) => events.map(e => `
         <label class="trigger-pill">
             <input type="checkbox" data-kind="${kind}" value="${e}" ${current.includes(e) ? 'checked' : ''}>
-            ${e}
+            ${eventLabel(e)}
         </label>
     `).join('');
 
@@ -1849,8 +1994,19 @@ function sequenceRow(spec) {
 
     row.querySelectorAll('.target-chip').forEach(chip => {
         chip.onclick = (e) => {
-            if (e.target.closest('.target-reset')) return;
+            if (e.target.closest('.target-reset, .target-retarget')) return;
             selectTarget(chip.dataset.target);
+        };
+    });
+    row.querySelectorAll('.target-retarget').forEach(sel => {
+        sel.onchange = (e) => {
+            e.stopPropagation();
+            const newTarget = sel.value;
+            if (!newTarget || newTarget === spec.targets[0]) return;
+            if (sequencer.retargetSequence(spec.id, newTarget)) {
+                selectTarget(newTarget);
+                renderAnimationsPanel();
+            }
         };
     });
     row.querySelectorAll('.target-reset').forEach(btn => {
@@ -1900,7 +2056,7 @@ function clipTriggerPills(kind, current, events) {
     return events.map(e => `
         <label class="trigger-pill">
             <input type="checkbox" data-kind="${kind}" value="${e}" ${current.includes(e) ? 'checked' : ''}>
-            ${e}
+            ${eventLabel(e)}
         </label>
     `).join('');
 }
@@ -1917,13 +2073,13 @@ function clipRow(clip) {
 
     const pillsHtml = (list) => list.length === 0
         ? `<span class="muted">${t('animations.none')}</span>`
-        : list.map(s => `<span class="trigger-mini">${s}</span>`).join('');
+        : list.map(s => `<span class="trigger-mini">${eventLabel(s)}</span>`).join('');
 
     // Head layout mirrors seq-row so the two sections read consistently.
     row.innerHTML = `
         <div class="row-head">
             <span class="name-input" style="flex:1;padding:3px 6px;font-size:11px;color:#fff;">
-                ${ICON_CLIP} ${clip.name}
+                ${ICON_CLIP} ${clip.localName || clip.name}
             </span>
             <span class="seq-duration muted">${clip.duration.toFixed(2)}s</span>
             <button class="play-btn" title="${playing ? t('clips.stopTitle') : t('clips.playTitle')}">${playing ? '■' : '▶'}</button>
@@ -2016,7 +2172,8 @@ function clipRow(clip) {
 }
 
 function renderClipsSection(pane) {
-    const clips = clipManager.listClips();
+    // Scene-only; asset clips live under their asset in the Assets tab.
+    const clips = clipManager.listClips().filter(c => c.sourceId === 'scene');
 
     const heading = document.createElement('div');
     heading.className = 'editor-section-heading';

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { DEV } from '../config.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DEV, SCENE_ID } from '../config.js';
+import { getTeamColor, onTeamColorsChange } from '../state/teamColors.js';
 
 // Single source of truth for editable scene objects. Mutations emit change events.
 
@@ -47,9 +49,12 @@ export const TONE_MAPPING_TYPES = {
 
 const WORLD_DEFAULTS = {
     backgroundColor: '#1a1a2e',
+    backgroundColorBinding: 'static',
     // Optional user-uploaded panorama as a data URL. When set, replaces backgroundColor
     // as the scene background.
     skyboxImage: null,
+    // Blend factor: 0 = image invisible (color only), 1 = image fully opaque covers color.
+    skyboxImageOpacity: 1.0,
     // 'Equirectangular' wraps a 2:1 panorama around the scene; 'UV' flat-maps the image.
     skyboxMapping: 'Equirectangular',
     // When true, both color and image are ignored; scene.background = null so the
@@ -65,7 +70,10 @@ const WORLD_DEFAULTS = {
     directionalShadowBounds: SHADOW_DEFAULTS.cameraBounds,
     directionalShadowFar: SHADOW_DEFAULTS.far,
     toneMapping: 'ACESFilmic',
-    toneMappingExposure: 1.0
+    toneMappingExposure: 1.0,
+    // Ordered post-processing filter stack; each: { type, enabled, ...params }.
+    // Passes are applied top-to-bottom between the scene RenderPass and OutputPass.
+    postFx: []
 };
 
 function newId(prefix) {
@@ -79,9 +87,52 @@ function hexToInt(hex) {
     return parseInt(hex.replace('#', '0x'));
 }
 
+function resolveColor(hex, binding) {
+    if (binding && binding !== 'static') {
+        const bound = getTeamColor(binding);
+        if (bound) return bound;
+    }
+    return hex;
+}
+
 function intToHex(n) {
     return '#' + n.toString(16).padStart(6, '0');
 }
+
+// Volumetric spot-cone shader — fresnel makes silhouette edges pick up more density
+// (mimicking longer view-ray travel through the illuminated volume), length falloff
+// keeps it brightest near the emitter, tip-soft avoids a hard point at the source.
+const SPOT_CONE_VERTEX = /* glsl */`
+varying vec3 vLocalPos;
+varying vec3 vWorldNormal;
+varying vec3 vViewDir;
+void main() {
+    vLocalPos = position;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vViewDir = normalize(cameraPosition - worldPos.xyz);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+}`;
+const SPOT_CONE_FRAGMENT = /* glsl */`
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uLength;
+uniform float uMaxRadius;
+varying vec3 vLocalPos;
+varying vec3 vWorldNormal;
+varying vec3 vViewDir;
+void main() {
+    float heightT = clamp(-vLocalPos.y / uLength, 0.0, 1.0);
+    float lengthFalloff = pow(1.0 - heightT, 1.5);
+    float tipSoft = smoothstep(0.0, 0.03, heightT);
+    float NdotV = abs(dot(normalize(vWorldNormal), normalize(vViewDir)));
+    float fresnel = pow(1.0 - NdotV, 2.5);
+    float coneR = max(uMaxRadius * heightT, 1e-4);
+    float radial = clamp(length(vLocalPos.xz) / coneR, 0.0, 1.0);
+    float coreGlow = pow(1.0 - radial, 3.0);
+    float alpha = uOpacity * lengthFalloff * tipSoft * (fresnel + 0.35 * coreGlow);
+    gl_FragColor = vec4(uColor, alpha);
+}`;
 
 function vecToArr(v) {
     if (Array.isArray(v)) return [v[0] || 0, v[1] || 0, v[2] || 0];
@@ -127,12 +178,41 @@ class Registry extends EventTarget {
         this.rendererRef = null;
         this.lights = new Map();
         this.slots = new Map();
+        this.assets = new Map();
         this.liveCamera = {
             position: [8, 6, 8],
             rotation: [0, 0, 0],
             fov: 50
         };
+        // Static "committed" mirrors — only mutated by explicit user commits, never by
+        // animation. serialize() reads these so playback/scrub can never leak into the
+        // saved static state. staticLight/Slot/Asset maps mirror the spec, keyed by id.
+        this.staticLiveCamera = {
+            position: [...this.liveCamera.position],
+            rotation: [...this.liveCamera.rotation],
+            fov: this.liveCamera.fov
+        };
+        this.staticLights = new Map();
+        this.staticSlots = new Map();
+        this.staticAssets = new Map();
         this.world = { ...WORLD_DEFAULTS };
+        this.staticWorld = { ...this.world };
+        onTeamColorsChange(() => this.reapplyBoundColors());
+    }
+
+    reapplyBoundColors() {
+        for (const [id, entry] of this.lights) {
+            const usesBinding = (entry.spec.colorBinding && entry.spec.colorBinding !== 'static')
+                || (entry.spec.groundColorBinding && entry.spec.groundColorBinding !== 'static');
+            if (!usesBinding) continue;
+            this._applyLightSpec(entry.threeObject, entry.spec);
+            this._syncSpotCone(entry);
+            this.emit('lights:update', { id, spec: entry.spec, threeObject: entry.threeObject });
+        }
+        if (this.world.backgroundColorBinding && this.world.backgroundColorBinding !== 'static') {
+            this._applyWorldSpec();
+            this.emit('world:update', { spec: { ...this.world } });
+        }
     }
 
     init(scene, liveCamera, renderer = null) {
@@ -161,6 +241,45 @@ class Registry extends EventTarget {
                 this.world.toneMappingExposure = renderer.toneMappingExposure;
             }
         }
+        this._commitStatic();
+    }
+
+    // Snapshot the current registry state into the static mirrors. Called after init/hydrate
+    // so the mirrors start in sync, and after any user commit via updateXxx.
+    _commitStatic() {
+        this.staticLiveCamera = { ...this.liveCamera, position: [...this.liveCamera.position], rotation: [...this.liveCamera.rotation] };
+        this.staticWorld = { ...this.world };
+        this.staticLights.clear();
+        for (const [id, entry] of this.lights) this.staticLights.set(id, this._cloneLightSpec(entry.spec));
+        this.staticSlots.clear();
+        for (const [id, spec] of this.slots) this.staticSlots.set(id, this._cloneSlotSpec(spec));
+        this.staticAssets.clear();
+        for (const [id, entry] of this.assets) this.staticAssets.set(id, this._cloneAssetSpec(entry.spec));
+    }
+
+    _cloneLightSpec(spec) {
+        return {
+            ...spec,
+            position: [...(spec.position || [])],
+            target: [...(spec.target || [])],
+            extras: { ...(spec.extras || {}) }
+        };
+    }
+    _cloneSlotSpec(spec) {
+        return {
+            ...spec,
+            position: [...(spec.position || [])],
+            rotation: [...(spec.rotation || [])],
+            scale: [...(spec.scale || [])]
+        };
+    }
+    _cloneAssetSpec(spec) {
+        return {
+            ...spec,
+            position: [...(spec.position || [])],
+            rotation: [...(spec.rotation || [])],
+            scale: [...(spec.scale || [])]
+        };
     }
 
     emit(type, detail) {
@@ -172,11 +291,14 @@ class Registry extends EventTarget {
         const id = spec.id || newId('light');
         const normalized = this._normalizeLightSpec({ ...spec, id });
         const threeObject = this._createThreeLight(normalized);
-        this.lights.set(id, { spec: normalized, threeObject });
+        const entry = { spec: normalized, threeObject, coneMesh: null };
+        this.lights.set(id, entry);
+        this.staticLights.set(id, this._cloneLightSpec(normalized));
         this.scene.add(threeObject);
         if (threeObject.target && threeObject.target.parent !== this.scene) {
             this.scene.add(threeObject.target);
         }
+        this._syncSpotCone(entry);
         this.emit('lights:add', { id, spec: normalized, threeObject });
         return id;
     }
@@ -189,7 +311,9 @@ class Registry extends EventTarget {
             this.scene.remove(entry.threeObject.target);
         }
         if (entry.threeObject.dispose) entry.threeObject.dispose();
+        this._disposeSpotCone(entry);
         this.lights.delete(id);
+        this.staticLights.delete(id);
         this.emit('lights:remove', { id });
     }
 
@@ -224,7 +348,9 @@ class Registry extends EventTarget {
             return this.addLight(newSpec);
         }
         entry.spec = newSpec;
+        this.staticLights.set(id, this._cloneLightSpec(newSpec));
         this._applyLightSpec(entry.threeObject, newSpec);
+        this._syncSpotCone(entry);
         this.emit('lights:update', { id, spec: newSpec, threeObject: entry.threeObject });
     }
 
@@ -242,7 +368,9 @@ class Registry extends EventTarget {
             name: spec.name || spec.id,
             type: spec.type || 'Directional',
             color: spec.color ?? '#ffffff',
+            colorBinding: spec.colorBinding ?? 'static',
             groundColor: spec.groundColor ?? '#444444',
+            groundColorBinding: spec.groundColorBinding ?? 'static',
             intensity: spec.intensity ?? 1.0,
             position: vecToArr(spec.position ?? [0, 5, 0]),
             target: vecToArr(spec.target ?? [0, 0, 0]),
@@ -252,14 +380,14 @@ class Registry extends EventTarget {
     }
 
     _createThreeLight(spec) {
-        const colorInt = hexToInt(spec.color);
+        const colorInt = hexToInt(resolveColor(spec.color, spec.colorBinding));
         let light;
         switch (spec.type) {
             case 'Ambient':
                 light = new THREE.AmbientLight(colorInt, spec.intensity);
                 break;
             case 'Hemisphere':
-                light = new THREE.HemisphereLight(colorInt, hexToInt(spec.groundColor), spec.intensity);
+                light = new THREE.HemisphereLight(colorInt, hexToInt(resolveColor(spec.groundColor, spec.groundColorBinding)), spec.intensity);
                 light.position.set(...spec.position);
                 break;
             case 'Point':
@@ -299,10 +427,10 @@ class Registry extends EventTarget {
     }
 
     _applyLightSpec(light, spec) {
-        const colorInt = hexToInt(spec.color);
+        const colorInt = hexToInt(resolveColor(spec.color, spec.colorBinding));
         if (light.color) light.color.setHex(colorInt);
         if (light.isHemisphereLight && spec.groundColor) {
-            light.groundColor.setHex(hexToInt(spec.groundColor));
+            light.groundColor.setHex(hexToInt(resolveColor(spec.groundColor, spec.groundColorBinding)));
         }
         light.intensity = spec.intensity;
         if (light.position && !light.isAmbientLight) {
@@ -325,6 +453,97 @@ class Registry extends EventTarget {
         }
     }
 
+    _syncSpotCone(entry) {
+        const spec = entry.spec;
+        const wantsCone = spec.type === 'Spot' && !!spec.extras?.visibleCone;
+        if (!wantsCone) { this._disposeSpotCone(entry); return; }
+
+        const angle = spec.extras?.angle ?? Math.PI / 6;
+        // SpotLight distance of 0 = infinite; fall back to the distance from light to target.
+        const specDist = spec.extras?.distance ?? 0;
+        const fallback = new THREE.Vector3(...spec.position).distanceTo(new THREE.Vector3(...spec.target)) || 10;
+        const length = specDist > 0 ? specDist : fallback;
+        const radius = Math.max(0.001, length * Math.tan(angle));
+        const color = new THREE.Color(hexToInt(resolveColor(spec.color, spec.colorBinding)));
+        const opacity = Math.max(0, Math.min(1, spec.extras?.coneOpacity ?? 0.2));
+
+        // Cheap path: same geometry size, just update uniforms + orientation.
+        const cur = entry.coneMesh;
+        if (cur && cur.userData.length === length && cur.userData.radius === radius) {
+            cur.material.uniforms.uColor.value.copy(color);
+            cur.material.uniforms.uOpacity.value = opacity;
+            this._orientSpotCone(cur, spec);
+            return;
+        }
+
+        this._disposeSpotCone(entry);
+        const geom = new THREE.ConeGeometry(radius, length, 48, 1, true);
+        // ConeGeometry has tip at +Y; shift so tip sits at origin pointing -Y.
+        geom.translate(0, -length / 2, 0);
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uColor: { value: color },
+                uOpacity: { value: opacity },
+                uLength: { value: length },
+                uMaxRadius: { value: radius }
+            },
+            vertexShader: SPOT_CONE_VERTEX,
+            fragmentShader: SPOT_CONE_FRAGMENT,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geom, material);
+        mesh.userData.length = length;
+        mesh.userData.radius = radius;
+        mesh.renderOrder = 1;
+        this._orientSpotCone(mesh, spec);
+        this.scene.add(mesh);
+        entry.coneMesh = mesh;
+    }
+
+    _orientSpotCone(mesh, spec) {
+        const from = new THREE.Vector3(...spec.position);
+        const to = new THREE.Vector3(...spec.target);
+        const dir = to.sub(from);
+        if (dir.lengthSq() === 0) dir.set(0, -1, 0);
+        dir.normalize();
+        // Align cone's -Y axis (its downward direction) with the light-to-target vector.
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+        mesh.position.set(...spec.position);
+        mesh.quaternion.copy(q);
+    }
+
+    _disposeSpotCone(entry) {
+        if (!entry.coneMesh) return;
+        this.scene.remove(entry.coneMesh);
+        entry.coneMesh.geometry.dispose();
+        entry.coneMesh.material.dispose();
+        entry.coneMesh = null;
+    }
+
+    // Sync cone color and orientation from the live three.js light — used by the sequencer,
+    // which mutates the light object directly and bypasses spec (and thus _syncSpotCone).
+    // Doesn't rebuild geometry (angle/distance size drift is not handled — would need per-frame
+    // geometry rebuilds during animation, which is prohibitively expensive).
+    syncSpotConeLive(id) {
+        const entry = this.lights.get(id);
+        if (!entry?.coneMesh) return;
+        const light = entry.threeObject;
+        if (!light.isSpotLight) return;
+        const cone = entry.coneMesh;
+        cone.material.uniforms.uColor.value.copy(light.color);
+        const from = light.position;
+        const to = light.target?.position ?? from;
+        const dir = new THREE.Vector3().subVectors(to, from);
+        if (dir.lengthSq() === 0) dir.set(0, -1, 0);
+        dir.normalize();
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+        cone.position.copy(from);
+        cone.quaternion.copy(q);
+    }
+
     addSlot(spec) {
         const role = spec.role || spec.id;
         if (!VALID_SLOT_ROLES.includes(role)) {
@@ -338,6 +557,7 @@ class Registry extends EventTarget {
         const id = role; // identity is the role itself
         const normalized = this._normalizeSlotSpec({ ...spec, id, role });
         this.slots.set(id, normalized);
+        this.staticSlots.set(id, this._cloneSlotSpec(normalized));
         this.emit('slots:add', { id, spec: normalized });
         return id;
     }
@@ -349,6 +569,7 @@ class Registry extends EventTarget {
     removeSlot(id) {
         if (!this.slots.has(id)) return;
         this.slots.delete(id);
+        this.staticSlots.delete(id);
         this.emit('slots:remove', { id });
     }
 
@@ -357,6 +578,7 @@ class Registry extends EventTarget {
         if (!cur) return;
         const newSpec = this._normalizeSlotSpec({ ...cur, ...partial });
         this.slots.set(id, newSpec);
+        this.staticSlots.set(id, this._cloneSlotSpec(newSpec));
         this.emit('slots:update', { id, spec: newSpec });
     }
 
@@ -370,13 +592,17 @@ class Registry extends EventTarget {
 
     _normalizeSlotSpec(spec) {
         const role = spec.role || DEFAULT_SLOT_ROLES[spec.id] || spec.id;
+        // Slots scale uniformly; max keeps legacy non-uniform saves from shrinking.
+        const s = vecToArr(spec.scale ?? [1, 1, 1]);
+        const u = Math.max(s[0], s[1], s[2]) || 1;
         return {
             id: spec.id,
             role,
             label: spec.label || role,
             position: vecToArr(spec.position ?? [0, 0, 0]),
             rotation: vecToArr(spec.rotation ?? [0, 0, 0]),
-            scale: vecToArr(spec.scale ?? [1, 1, 1])
+            scale: [u, u, u],
+            pickDelay: Math.max(0, Number(spec.pickDelay) || 0)
         };
     }
 
@@ -439,6 +665,12 @@ class Registry extends EventTarget {
         }
 
         Object.assign(this.liveCamera, partial);
+        // Mirror into the static committed state — user commit.
+        this.staticLiveCamera = {
+            ...this.liveCamera,
+            position: [...this.liveCamera.position],
+            rotation: [...this.liveCamera.rotation]
+        };
 
         if (this.liveCameraRef) {
             if (partial.position) this.liveCameraRef.position.set(...vecToArr(partial.position));
@@ -459,6 +691,7 @@ class Registry extends EventTarget {
 
     updateWorld(partial) {
         Object.assign(this.world, partial);
+        this.staticWorld = { ...this.world };
         this._applyWorldSpec();
         this.emit('world:update', { spec: { ...this.world } });
     }
@@ -478,8 +711,9 @@ class Registry extends EventTarget {
                 this._applySkyboxImage(this.world.skyboxImage);
             } else {
                 this._disposeSkyboxTexture();
-                if (this.world.backgroundColor) {
-                    const colorInt = hexToInt(this.world.backgroundColor);
+                const effective = resolveColor(this.world.backgroundColor, this.world.backgroundColorBinding);
+                if (effective) {
+                    const colorInt = hexToInt(effective);
                     if (this.scene.background?.isColor) {
                         this.scene.background.setHex(colorInt);
                     } else {
@@ -526,80 +760,80 @@ class Registry extends EventTarget {
         }
     }
 
-    // Loads the data URL as a texture and sets it as scene.background. Mapping is read
-    // from world.skyboxMapping. Mapping-only changes reuse the cached texture in-place.
-    // GIFs go through a CanvasTexture path that snapshots the animated <img> each frame.
+    // Composites the skybox as color-fill + image drawn at world.skyboxImageOpacity into a
+    // canvas texture, so the color shows through wherever the image is transparent OR when
+    // the opacity slider is < 1. Static images and GIFs use the same pipeline; GIFs additionally
+    // spin a rAF loop to snapshot the animated <img> each frame.
     _applySkyboxImage(dataUrl) {
-        const desiredMapping = SKYBOX_MAPPINGS[this.world.skyboxMapping] ?? THREE.EquirectangularReflectionMapping;
-        if (this._skyboxTexture && this._skyboxTextureSource === dataUrl) {
-            if (this._skyboxTexture.mapping !== desiredMapping) {
-                this._skyboxTexture.mapping = desiredMapping;
-            }
-            if (this.scene) this.scene.background = this._skyboxTexture;
+        const mapping = SKYBOX_MAPPINGS[this.world.skyboxMapping] ?? THREE.EquirectangularReflectionMapping;
+        if (this._skyboxImgSource === dataUrl && this._skyboxImg && this._skyboxCanvas) {
+            this._composeSkybox();
+            this._rebindSkyboxTexture(mapping);
             return;
         }
-        if (dataUrl.startsWith('data:image/gif')) {
-            this._applyGifSkybox(dataUrl, desiredMapping);
-        } else {
-            this._applyStaticSkybox(dataUrl, desiredMapping);
-        }
-    }
 
-    _applyStaticSkybox(dataUrl, mapping) {
-        new THREE.TextureLoader().load(
-            dataUrl,
-            (tex) => {
-                tex.mapping = mapping;
-                tex.colorSpace = THREE.SRGBColorSpace;
-                if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
-                    tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
-                }
-                // Race: if the user cleared/replaced the image while this was loading, drop it.
-                if (this.world.skyboxImage !== dataUrl) { tex.dispose(); return; }
-                this._disposeSkyboxTexture();
-                this._skyboxTexture = tex;
-                this._skyboxTextureSource = dataUrl;
-                if (this.scene) this.scene.background = tex;
-            },
-            undefined,
-            (err) => { console.error('Failed to load skybox image:', err); }
-        );
-    }
-
-    // Browsers animate GIFs on the <img> element itself; we redraw it to a canvas
-    // per frame and let CanvasTexture pick up the change.
-    _applyGifSkybox(dataUrl, mapping) {
+        this._disposeSkyboxTexture();
+        const isGif = dataUrl.startsWith('data:image/gif');
         const img = document.createElement('img');
         img.onload = () => {
+            // Race: user cleared/replaced the image while this was loading.
             if (this.world.skyboxImage !== dataUrl) return;
+            this._skyboxImg = img;
+            this._skyboxImgSource = dataUrl;
             const canvas = document.createElement('canvas');
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.mapping = mapping;
-            tex.colorSpace = THREE.SRGBColorSpace;
-            if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
-                tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
+            this._skyboxCanvas = canvas;
+            this._skyboxCanvasCtx = canvas.getContext('2d');
+            this._composeSkybox();
+            this._rebindSkyboxTexture(mapping);
+            if (isGif) {
+                this._skyboxGif = { rafId: 0 };
+                this._gifTick();
             }
-            this._disposeSkyboxTexture();
-            this._skyboxTexture = tex;
-            this._skyboxTextureSource = dataUrl;
-            this._skyboxGif = { img, canvas, ctx, texture: tex, rafId: 0 };
-            if (this.scene) this.scene.background = tex;
-            this._gifTick();
         };
-        img.onerror = () => console.error('Failed to load GIF skybox');
+        img.onerror = () => console.error('Failed to load skybox image');
         img.src = dataUrl;
+    }
+
+    // Dispose the old texture and bind a fresh CanvasTexture over the same canvas.
+    // Reassigning scene.background is the reliable path — CanvasTexture.needsUpdate alone
+    // has been observed not to re-upload for scene.background in the current three.js build.
+    _rebindSkyboxTexture(mapping) {
+        if (!this._skyboxCanvas) return;
+        if (this._skyboxTexture) this._skyboxTexture.dispose();
+        const tex = new THREE.CanvasTexture(this._skyboxCanvas);
+        tex.mapping = mapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        if (this.rendererRef?.capabilities?.getMaxAnisotropy) {
+            tex.anisotropy = this.rendererRef.capabilities.getMaxAnisotropy();
+        }
+        this._skyboxTexture = tex;
+        if (this.scene) this.scene.background = tex;
+    }
+
+    _composeSkybox() {
+        if (!this._skyboxCanvas || !this._skyboxImg) return;
+        const ctx = this._skyboxCanvasCtx;
+        const canvas = this._skyboxCanvas;
+        const opacity = Math.max(0, Math.min(1, this.world.skyboxImageOpacity ?? 1));
+        const bg = resolveColor(this.world.backgroundColor, this.world.backgroundColorBinding) || '#000000';
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (opacity > 0) {
+            ctx.globalAlpha = opacity;
+            ctx.drawImage(this._skyboxImg, 0, 0);
+            ctx.globalAlpha = 1;
+        }
     }
 
     _gifTick() {
         const g = this._skyboxGif;
         if (!g) return;
         g.rafId = requestAnimationFrame(() => this._gifTick());
-        g.ctx.drawImage(g.img, 0, 0);
-        g.texture.needsUpdate = true;
+        this._composeSkybox();
+        if (this._skyboxTexture) this._skyboxTexture.needsUpdate = true;
     }
 
     _disposeSkyboxTexture() {
@@ -610,16 +844,133 @@ class Registry extends EventTarget {
         if (this._skyboxTexture) {
             this._skyboxTexture.dispose();
             this._skyboxTexture = null;
-            this._skyboxTextureSource = null;
         }
+        this._skyboxImg = null;
+        this._skyboxImgSource = null;
+        this._skyboxCanvas = null;
+        this._skyboxCanvasCtx = null;
     }
 
+    // ---------- Assets (user-uploaded GLB/GLTF props) ----------
+
+    _normalizeAssetSpec(spec) {
+        return {
+            id: spec.id,
+            name: spec.name || spec.filename || spec.id,
+            filename: spec.filename,
+            position: vecToArr(spec.position ?? [0, 0, 0]),
+            rotation: vecToArr(spec.rotation ?? [0, 0, 0]),
+            scale: vecToArr(spec.scale ?? [1, 1, 1]),
+            opacity: typeof spec.opacity === 'number' ? Math.max(0, Math.min(1, spec.opacity)) : 1
+        };
+    }
+
+    addAsset(spec) {
+        const id = spec.id || newId('asset');
+        const normalized = this._normalizeAssetSpec({ ...spec, id });
+        const entry = { spec: normalized, root: null, animations: [], loading: true };
+        this.assets.set(id, entry);
+        this.staticAssets.set(id, this._cloneAssetSpec(normalized));
+        this.emit('assets:add', { id, spec: normalized });
+        this._loadAssetGltf(entry);
+        return id;
+    }
+
+    _loadAssetGltf(entry) {
+        const url = `./scenes/${SCENE_ID}/assets/${entry.spec.filename}`;
+        new GLTFLoader().load(url, (gltf) => {
+            if (!this.assets.has(entry.spec.id)) return; // removed while loading
+            const root = gltf.scene;
+            root.userData.assetId = entry.spec.id;
+            root.traverse(o => {
+                if (o.isMesh) {
+                    o.castShadow = true;
+                    o.receiveShadow = true;
+                    if (o.material) {
+                        // Clone so opacity edits don't mutate cached materials from shared gltfs.
+                        o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+                    }
+                }
+            });
+            entry.root = root;
+            entry.animations = Array.isArray(gltf.animations) ? gltf.animations : [];
+            entry.loading = false;
+            this._applyAssetSpec(entry, entry.spec);
+            this.scene.add(root);
+            this.emit('assets:loaded', { id: entry.spec.id, spec: entry.spec, root, animations: entry.animations });
+        }, undefined, (err) => {
+            console.error(`Failed to load asset ${entry.spec.filename}:`, err);
+            entry.loading = false;
+        });
+    }
+
+    _applyAssetSpec(entry, spec) {
+        const root = entry.root;
+        if (!root) return;
+        root.position.set(...spec.position);
+        root.rotation.set(...spec.rotation);
+        root.scale.set(...spec.scale);
+        this._applyAssetOpacity(root, spec.opacity);
+    }
+
+    _applyAssetOpacity(root, opacity) {
+        const o = Math.max(0, Math.min(1, opacity));
+        root.traverse(node => {
+            if (!node.material) return;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach(m => {
+                m.transparent = o < 1;
+                m.opacity = o;
+                m.depthWrite = o >= 1;
+                m.needsUpdate = true;
+            });
+        });
+    }
+
+    removeAsset(id) {
+        const entry = this.assets.get(id);
+        if (!entry) return;
+        if (entry.root) {
+            this.scene.remove(entry.root);
+            entry.root.traverse(node => {
+                if (node.geometry) node.geometry.dispose();
+                if (node.material) {
+                    const mats = Array.isArray(node.material) ? node.material : [node.material];
+                    mats.forEach(m => m.dispose && m.dispose());
+                }
+            });
+        }
+        this.assets.delete(id);
+        this.staticAssets.delete(id);
+        this.emit('assets:remove', { id, filename: entry.spec.filename });
+    }
+
+    updateAsset(id, partial) {
+        const entry = this.assets.get(id);
+        if (!entry) return;
+        entry.spec = this._normalizeAssetSpec({ ...entry.spec, ...partial });
+        this.staticAssets.set(id, this._cloneAssetSpec(entry.spec));
+        this._applyAssetSpec(entry, entry.spec);
+        this.emit('assets:update', { id, spec: entry.spec, root: entry.root });
+    }
+
+    getAsset(id) {
+        return this.assets.get(id);
+    }
+
+    listAssets() {
+        return Array.from(this.assets.values()).map(e => e.spec);
+    }
+
+    // Save reads from the static committed mirrors, never from the live specs — animation
+    // and preview can freely mutate the live spec without the change ever reaching disk.
     serialize() {
         return {
-            lights: this.listLights(),
-            slots: this.listSlots(),
-            liveCamera: { ...this.liveCamera },
-            world: { ...this.world }
+            lights: Array.from(this.staticLights.values()),
+            slots: Array.from(this.staticSlots.values()),
+            assets: Array.from(this.staticAssets.values()),
+            liveCamera: { ...this.staticLiveCamera, position: [...this.staticLiveCamera.position], rotation: [...this.staticLiveCamera.rotation] },
+            world: { ...this.staticWorld }
         };
     }
 
@@ -627,11 +978,15 @@ class Registry extends EventTarget {
         if (!data) return;
         for (const id of Array.from(this.lights.keys())) this.removeLight(id);
         for (const id of Array.from(this.slots.keys())) this.removeSlot(id);
+        for (const id of Array.from(this.assets.keys())) this.removeAsset(id);
 
         // World first so shadow settings are live when lights are created.
         if (data.world) {
             this.world = { ...WORLD_DEFAULTS, ...data.world };
             this._applyWorldSpec();
+            // Emit so subscribers (postFx composer, etc.) see the hydrated state — the
+            // updateWorld path emits, so hydrate should too for symmetry.
+            this.emit('world:update', { spec: { ...this.world } });
         }
         if (Array.isArray(data.lights)) {
             data.lights.forEach(spec => this.addLight(spec));
@@ -639,9 +994,13 @@ class Registry extends EventTarget {
         if (Array.isArray(data.slots)) {
             data.slots.forEach(spec => this.addSlot(spec));
         }
+        if (Array.isArray(data.assets)) {
+            data.assets.forEach(spec => this.addAsset(spec));
+        }
         if (data.liveCamera) {
             this.updateLiveCamera(data.liveCamera);
         }
+        this._commitStatic();
     }
 
 }

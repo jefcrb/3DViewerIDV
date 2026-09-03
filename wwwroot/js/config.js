@@ -39,7 +39,7 @@ function getDevMode() {
 
 export const DEV = getDevMode();
 
-export const PLUGIN_VERSION = '0.09.3';
+export const PLUGIN_VERSION = '0.10.0';
 
 export const AVAILABLE_HUNTERS = [
     { name: "Hell Ember", folder: "厂长" },

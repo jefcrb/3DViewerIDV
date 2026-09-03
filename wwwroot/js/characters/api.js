@@ -2,12 +2,40 @@ import { state as sceneState, hideDummyModels } from '../scene/loader.js';
 import { state as characterState, loadCharacterModel } from './loader.js';
 import { playOutroAnimation } from '../customization/outroAnimation.js';
 import { fire } from '../animation/triggers.js';
+import { updateTeamColors } from '../state/teamColors.js';
+import { registry } from '../editor/registry.js';
 
 const isWebContext = window.location.hostname === 'localhost';
 let lastFetchedData = null;
 let lastHunterKey = null;
 let lastSurvivorKeys = [null, null, null, null];
+let lastHunterPicking = false;
+let lastSurvivorPicking = [false, false, false, false];
 let sceneLoadedFired = false;
+
+const pendingLoads = { hunter: null, survivors: [null, null, null, null] };
+
+function cancelPending(slotKey) {
+    if (slotKey === 'hunter') {
+        if (pendingLoads.hunter) { clearTimeout(pendingLoads.hunter); pendingLoads.hunter = null; }
+    } else {
+        const i = parseInt(slotKey.split('_')[1]) - 1;
+        if (pendingLoads.survivors[i]) { clearTimeout(pendingLoads.survivors[i]); pendingLoads.survivors[i] = null; }
+    }
+}
+
+function scheduleLoad(slotKey, doLoad) {
+    cancelPending(slotKey);
+    const delayMs = (registry.getSlot(slotKey)?.pickDelay ?? 0) * 1000;
+    if (delayMs <= 0) { doLoad(); return; }
+    const timer = setTimeout(() => {
+        if (slotKey === 'hunter') pendingLoads.hunter = null;
+        else pendingLoads.survivors[parseInt(slotKey.split('_')[1]) - 1] = null;
+        doLoad();
+    }, delayMs);
+    if (slotKey === 'hunter') pendingLoads.hunter = timer;
+    else pendingLoads.survivors[parseInt(slotKey.split('_')[1]) - 1] = timer;
+}
 
 console.log('[Init] Hostname:', window.location.hostname);
 console.log('[Init] Is web context:', isWebContext);
@@ -63,11 +91,38 @@ function fireDiffEvents(jsonData) {
     }
     if (anySelected) fire('survivor_any_selected', {});
     if (anyDeselected) fire('survivor_any_deselected', {});
+
+    const newHunterPicking = !!jsonData.hunter?.isPicking;
+    if (newHunterPicking !== lastHunterPicking) {
+        fire(newHunterPicking ? 'hunter_picking_started' : 'hunter_picking_ended',
+             { name: jsonData.hunter?.name });
+        lastHunterPicking = newHunterPicking;
+    }
+
+    let anyPickingStarted = false;
+    let anyPickingEnded = false;
+    for (let i = 0; i < 4; i++) {
+        const newPicking = !!survivors[i]?.isPicking;
+        if (newPicking !== lastSurvivorPicking[i]) {
+            fire(`survivor_${i + 1}_${newPicking ? 'picking_started' : 'picking_ended'}`,
+                 { index: i, name: survivors[i]?.name });
+            if (newPicking) anyPickingStarted = true;
+            else anyPickingEnded = true;
+            lastSurvivorPicking[i] = newPicking;
+        }
+    }
+    if (anyPickingStarted) fire('survivor_any_picking_started', {});
+    if (anyPickingEnded) fire('survivor_any_picking_ended', {});
 }
 
 export function setupCharacterAPI(scene) {
     window.loadCharactersJson = function(jsonData) {
         console.log('Received character data from backend:', jsonData);
+
+        if (jsonData.teams) updateTeamColors(jsonData.teams);
+
+        // Fire triggers up-front so pickDelay only delays the model load, not the animation.
+        fireDiffEvents(jsonData);
 
         if (sceneState.sceneLoaded) {
             hideDummyModels(sceneState.dummyModels);
@@ -81,20 +136,16 @@ export function setupCharacterAPI(scene) {
             : null;
 
         if (hunterUrl !== (characterState.loadedCharacters.hunter?.url || null)) {
+            cancelPending('hunter');
             if (characterState.loadedCharacters.hunter) {
                 scene.remove(characterState.loadedCharacters.hunter.model);
                 characterState.loadedCharacters.hunter = null;
                 console.log('Removed old hunter');
             }
             if (hunterUrl && hunterTransform) {
-                loadCharacterModel(
-                    scene,
-                    hunterUrl,
-                    jsonData.hunter.name,
-                    hunterTransform,
-                    'hunter',
-                    -1
-                );
+                scheduleLoad('hunter', () => loadCharacterModel(
+                    scene, hunterUrl, jsonData.hunter.name, hunterTransform, 'hunter', -1
+                ));
             }
         } else if (hunterUrl) {
             console.log(`Hunter unchanged: ${jsonData.hunter.name}`);
@@ -109,6 +160,7 @@ export function setupCharacterAPI(scene) {
                     : null;
 
                 if (survivorUrl !== (characterState.loadedCharacters.survivors[index]?.url || null)) {
+                    cancelPending(`survivor_${index + 1}`);
                     if (characterState.loadedCharacters.survivors[index]) {
                         const oldModel = characterState.loadedCharacters.survivors[index].model;
                         playOutroAnimation(oldModel).then(() => {
@@ -118,14 +170,9 @@ export function setupCharacterAPI(scene) {
                         console.log(`Removed old survivor at position ${index}`);
                     }
                     if (survivorUrl && survivorTransforms[index]) {
-                        loadCharacterModel(
-                            scene,
-                            survivorUrl,
-                            survivor.name,
-                            survivorTransforms[index],
-                            'survivor',
-                            index
-                        );
+                        scheduleLoad(`survivor_${index + 1}`, () => loadCharacterModel(
+                            scene, survivorUrl, survivor.name, survivorTransforms[index], 'survivor', index
+                        ));
                     }
                 } else if (survivorUrl) {
                     console.log(`Survivor ${index} unchanged: ${survivor.name}`);
@@ -135,6 +182,7 @@ export function setupCharacterAPI(scene) {
 
         for (let i = (jsonData.survivors?.length || 0); i < 4; i++) {
             if (characterState.loadedCharacters.survivors[i]) {
+                cancelPending(`survivor_${i + 1}`);
                 const oldModel = characterState.loadedCharacters.survivors[i].model;
                 playOutroAnimation(oldModel).then(() => {
                     scene.remove(oldModel);
@@ -143,8 +191,6 @@ export function setupCharacterAPI(scene) {
                 console.log(`Removed survivor at position ${i} (no longer in data)`);
             }
         }
-
-        fireDiffEvents(jsonData);
     };
 
     window.loadHunterFromJson = window.loadCharactersJson;

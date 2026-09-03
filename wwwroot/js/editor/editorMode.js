@@ -4,8 +4,9 @@ import { registry } from './registry.js';
 import { renderLightsPanel } from './lightsPanel.js';
 import { renderSlotsPanel } from './slotsPanel.js';
 import { renderCameraPanel } from './cameraPanel.js';
-import { renderAnimationsPanel } from './animationsPanel.js';
+import { renderAnimationsPanel, serializeCleanRegistry, isPreviewSerializeInProgress } from './animationsPanel.js';
 import { renderWorldPanel } from './worldPanel.js';
+import { renderAssetsPanel } from './assetsPanel.js';
 import { saveSettings } from '../storage/settingsStorage.js';
 import { sequencer } from '../animation/sequencer.js';
 import { clipManager } from '../animation/clips.js';
@@ -13,6 +14,7 @@ import { setFiringAllowed } from '../animation/triggers.js';
 import { initLightHelpers, setHelpersVisible } from './lightHelpers.js';
 import { t, toggleLanguage } from '../i18n.js';
 import { PLUGIN_VERSION } from '../config.js';
+import { effectiveColor } from './colorBinding.js';
 
 let mode = 'live';
 let editorCamera = null;
@@ -81,8 +83,20 @@ export function selectTarget(key) {
 
     if (key === 'liveCamera') {
         transformControls.attach(liveCamera);
-        transformControls.setMode('translate');
+        setGizmoMode('translate');
         transformControls.visible = true;
+        updateProxyVisibility();
+        return;
+    }
+
+    if (key.startsWith('light-target:')) {
+        const id = key.slice('light-target:'.length);
+        const light = registry.getLight(id)?.threeObject;
+        if (light?.target) {
+            transformControls.attach(light.target);
+            setGizmoMode('translate');
+            transformControls.visible = true;
+        }
         updateProxyVisibility();
         return;
     }
@@ -92,7 +106,7 @@ export function selectTarget(key) {
         const light = registry.getLight(id)?.threeObject;
         if (light) {
             transformControls.attach(light);
-            transformControls.setMode('translate');
+            setGizmoMode('translate');
             transformControls.visible = true;
         }
         updateProxyVisibility();
@@ -104,11 +118,28 @@ export function selectTarget(key) {
         const proxy = ensureSlotProxy(id);
         if (proxy) {
             transformControls.attach(proxy);
-            transformControls.setMode('translate');
+            setGizmoMode('translate');
+            transformControls.visible = true;
+        }
+        updateProxyVisibility();
+        return;
+    }
+
+    if (key.startsWith('asset:')) {
+        const id = key.slice('asset:'.length);
+        const root = registry.getAsset(id)?.root;
+        if (root) {
+            transformControls.attach(root);
+            setGizmoMode('translate');
             transformControls.visible = true;
         }
         updateProxyVisibility();
     }
+}
+
+function setGizmoMode(mode) {
+    if (!transformControls) return;
+    transformControls.setMode(mode);
 }
 
 function ensureSlotProxy(slotId) {
@@ -162,7 +193,10 @@ function disposeSlotProxies(removedId) {
 }
 
 function wireGizmoTransforms() {
-    transformControls.addEventListener('change', () => {
+    // 'objectChange' fires ONLY when the attached object is modified by the gizmo itself.
+    // Using plain 'change' would also fire when sampleAt/playback moves the object externally,
+    // causing the scrub-bar write-back to overwrite selected keyframes with interpolated values.
+    transformControls.addEventListener('objectChange', () => {
         if (!selectedTargetId) return;
         if (selectedTargetId === 'liveCamera') {
             registry.updateLiveCamera({
@@ -170,6 +204,15 @@ function wireGizmoTransforms() {
                 rotation: [liveCamera.rotation.x, liveCamera.rotation.y, liveCamera.rotation.z]
             });
             cameraHelper && cameraHelper.update();
+            return;
+        }
+        if (selectedTargetId.startsWith('light-target:')) {
+            const id = selectedTargetId.slice('light-target:'.length);
+            const entry = registry.getLight(id);
+            if (entry?.threeObject?.target) {
+                const p = entry.threeObject.target.position;
+                registry.updateLight(id, { target: [p.x, p.y, p.z] });
+            }
             return;
         }
         if (selectedTargetId.startsWith('light:')) {
@@ -185,10 +228,30 @@ function wireGizmoTransforms() {
             const id = selectedTargetId.slice('slot:'.length);
             const proxy = proxyByKey.get(selectedTargetId);
             if (proxy) {
+                // Slots scale uniformly — take the axis the user is dragging.
+                if (transformControls.mode === 'scale') {
+                    const axis = transformControls.axis;
+                    let u = proxy.scale.x;
+                    if (axis === 'Y') u = proxy.scale.y;
+                    else if (axis === 'Z') u = proxy.scale.z;
+                    proxy.scale.set(u, u, u);
+                }
                 registry.updateSlot(id, {
                     position: [proxy.position.x, proxy.position.y, proxy.position.z],
                     rotation: [proxy.rotation.x, proxy.rotation.y, proxy.rotation.z],
                     scale: [proxy.scale.x, proxy.scale.y, proxy.scale.z]
+                });
+            }
+            return;
+        }
+        if (selectedTargetId.startsWith('asset:')) {
+            const id = selectedTargetId.slice('asset:'.length);
+            const root = registry.getAsset(id)?.root;
+            if (root) {
+                registry.updateAsset(id, {
+                    position: [root.position.x, root.position.y, root.position.z],
+                    rotation: [root.rotation.x, root.rotation.y, root.rotation.z],
+                    scale: [root.scale.x, root.scale.y, root.scale.z]
                 });
             }
         }
@@ -216,7 +279,9 @@ function syncPanelInputs(detail) {
         setIfNotFocused(row.querySelector('.intensity-input'), spec.intensity);
         const ival = row.querySelector('.intensity-value');
         if (ival) ival.textContent = (spec.intensity ?? 0).toFixed(2);
-        setIfNotFocused(row.querySelector('.color-input'), spec.color);
+        setIfNotFocused(row.querySelector('.color-input'), effectiveColor(spec.color, spec.colorBinding));
+        const groundEl = row.querySelector('.ground-input');
+        if (groundEl) setIfNotFocused(groundEl, effectiveColor(spec.groundColor, spec.groundColorBinding));
         setIfNotFocused(row.querySelector('.pos-x'), spec.position[0]);
         setIfNotFocused(row.querySelector('.pos-y'), spec.position[1]);
         setIfNotFocused(row.querySelector('.pos-z'), spec.position[2]);
@@ -236,9 +301,26 @@ function syncPanelInputs(detail) {
         setIfNotFocused(row.querySelector('.rot-x'), spec.rotation[0]);
         setIfNotFocused(row.querySelector('.rot-y'), spec.rotation[1]);
         setIfNotFocused(row.querySelector('.rot-z'), spec.rotation[2]);
+        setIfNotFocused(row.querySelector('.scl-uniform'), spec.scale[0]);
+        return;
+    }
+    if (detail.type === 'assets:update') {
+        const spec = detail.spec;
+        const row = document.querySelector(`.tab-pane[data-tab="assets"] .editor-row[data-id="${spec.id}"]`);
+        if (!row) return;
+        const RAD2DEG = 180 / Math.PI;
+        setIfNotFocused(row.querySelector('.pos-x'), spec.position[0]);
+        setIfNotFocused(row.querySelector('.pos-y'), spec.position[1]);
+        setIfNotFocused(row.querySelector('.pos-z'), spec.position[2]);
+        setIfNotFocused(row.querySelector('.rot-x'), (spec.rotation[0] * RAD2DEG).toFixed(1));
+        setIfNotFocused(row.querySelector('.rot-y'), (spec.rotation[1] * RAD2DEG).toFixed(1));
+        setIfNotFocused(row.querySelector('.rot-z'), (spec.rotation[2] * RAD2DEG).toFixed(1));
         setIfNotFocused(row.querySelector('.scl-x'), spec.scale[0]);
         setIfNotFocused(row.querySelector('.scl-y'), spec.scale[1]);
         setIfNotFocused(row.querySelector('.scl-z'), spec.scale[2]);
+        setIfNotFocused(row.querySelector('.opacity-input'), spec.opacity ?? 1);
+        const opv = row.querySelector('.opacity-value');
+        if (opv) opv.textContent = `${((spec.opacity ?? 1) * 100).toFixed(0)}%`;
         return;
     }
     if (detail.type === 'liveCamera:update') {
@@ -280,9 +362,9 @@ function buildHeader(panel) {
     `;
     panel.appendChild(header);
 
-    header.querySelector('#gizmoTranslate').onclick = () => transformControls.setMode('translate');
-    header.querySelector('#gizmoRotate').onclick = () => transformControls.setMode('rotate');
-    header.querySelector('#gizmoScale').onclick = () => transformControls.setMode('scale');
+    header.querySelector('#gizmoTranslate').onclick = () => setGizmoMode('translate');
+    header.querySelector('#gizmoRotate').onclick = () => setGizmoMode('rotate');
+    header.querySelector('#gizmoScale').onclick = () => setGizmoMode('scale');
     header.querySelector('#gizmoDetach').onclick = () => detachGizmo();
     header.querySelector('#saveAllBtn').onclick = () => saveEditorState();
 }
@@ -299,7 +381,8 @@ function buildTabs(panel) {
     const tabs = document.createElement('div');
     tabs.className = 'editor-tabs';
     tabs.innerHTML = `
-        <button class="tab-btn active" data-tab="lights">${t('tabs.lights')}</button>
+        <button class="tab-btn active" data-tab="assets">${t('tabs.assets')}</button>
+        <button class="tab-btn" data-tab="lights">${t('tabs.lights')}</button>
         <button class="tab-btn" data-tab="slots">${t('tabs.characters')}</button>
         <button class="tab-btn" data-tab="cameras">${t('tabs.cameras')}</button>
         <button class="tab-btn" data-tab="world">${t('tabs.world')}</button>
@@ -310,7 +393,8 @@ function buildTabs(panel) {
     const tabContent = document.createElement('div');
     tabContent.className = 'editor-tab-content';
     tabContent.innerHTML = `
-        <div class="tab-pane active" data-tab="lights"></div>
+        <div class="tab-pane active" data-tab="assets"></div>
+        <div class="tab-pane" data-tab="lights"></div>
         <div class="tab-pane" data-tab="slots"></div>
         <div class="tab-pane" data-tab="cameras"></div>
         <div class="tab-pane" data-tab="world"></div>
@@ -329,8 +413,10 @@ function buildTabs(panel) {
 }
 
 async function saveEditorState(opts = {}) {
+    // Use the clean serializer so an active keyframe preview doesn't bake itself into the
+    // static registry values.
     const editor = {
-        ...registry.serialize(),
+        ...serializeCleanRegistry(),
         sequences: sequencer.serialize(),
         clips: clipManager.serialize()
     };
@@ -365,6 +451,7 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     buildTabs(panel);
     wireTopActions();
 
+    renderAssetsPanel();
     renderLightsPanel();
     renderSlotsPanel();
     renderCameraPanel();
@@ -376,18 +463,25 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     registry.addEventListener('lights:remove', () => renderLightsPanel());
     registry.addEventListener('slots:add', () => renderSlotsPanel());
     registry.addEventListener('slots:remove', () => renderSlotsPanel());
+    registry.addEventListener('assets:add', () => renderAssetsPanel());
+    registry.addEventListener('assets:remove', () => renderAssetsPanel());
+    registry.addEventListener('assets:loaded', () => renderAssetsPanel());
 
     registry.addEventListener('change', (e) => {
         refreshSlotProxies();
-        scheduleAutoSave();
+        // Skip during a preview-restore/reapply pass — the mutations there aren't user edits.
+        if (!isPreviewSerializeInProgress()) scheduleAutoSave();
         const type = e.detail?.type;
-        if (type === 'lights:update' || type === 'slots:update' || type === 'liveCamera:update') {
+        if (type === 'lights:update' || type === 'slots:update' || type === 'liveCamera:update' || type === 'assets:update') {
             syncPanelInputs(e.detail);
         }
     });
     registry.addEventListener('slots:remove', (e) => disposeSlotProxies(e.detail.id));
     registry.addEventListener('lights:remove', (e) => {
-        if (selectedTargetId === `light:${e.detail.id}`) detachGizmo();
+        if (selectedTargetId === `light:${e.detail.id}` || selectedTargetId === `light-target:${e.detail.id}`) detachGizmo();
+    });
+    registry.addEventListener('assets:remove', (e) => {
+        if (selectedTargetId === `asset:${e.detail.id}`) detachGizmo();
     });
 
     // Skip re-render when focus is inside the animations pane to avoid yanking it from inputs.
@@ -410,9 +504,9 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     window.addEventListener('keydown', (e) => {
         if (mode !== 'editor') return;
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-        if (e.key === 'w') transformControls.setMode('translate');
-        if (e.key === 'e') transformControls.setMode('rotate');
-        if (e.key === 'r') transformControls.setMode('scale');
+        if (e.key === 'w') setGizmoMode('translate');
+        if (e.key === 'e') setGizmoMode('rotate');
+        if (e.key === 'r') setGizmoMode('scale');
         if (e.key === 'Escape') detachGizmo();
     });
 

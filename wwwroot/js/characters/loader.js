@@ -163,6 +163,7 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
                 }
             }
 
+            model.userData.baseScale = finalScale;
             model.scale.set(
                 finalScale * transform.scale.x,
                 finalScale * transform.scale.y,
@@ -181,6 +182,10 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
             if (customData && customData.yOffset) {
                 model.position.y += customData.yOffset;
                 console.log(`Applied Y-offset for ${folderName}: ${customData.yOffset}`);
+            }
+            if (customData && typeof customData.rotationY === 'number') {
+                model.rotation.y += customData.rotationY;
+                console.log(`Applied Y-rotation for ${folderName}: ${customData.rotationY}`);
             }
         }
 

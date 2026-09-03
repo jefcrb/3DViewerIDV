@@ -153,28 +153,40 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     font-weight: 500;
 }
 
-#devPanel select {
-    width: 100%;
-    padding: 5px 8px;
-    background: #1e1e1e;
+body select {
+    padding: 4px 22px 4px 8px;
+    background-color: #1e1e1e;
     border: 1px solid #3c3c3c;
-    border-radius: 6px;
+    border-radius: 4px;
     color: #e5e5e5;
     font-size: 11px;
+    font-family: inherit;
     cursor: pointer;
-    transition: border-color 0.15s;
+    transition: border-color 0.15s, background-color 0.15s;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 1l5 5 5-5' fill='none' stroke='%23b3b3b3' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
 }
 
-#devPanel select:hover {
+body select:hover:not(:disabled) {
     border-color: #5a5a5a;
+    background-color: #262626;
 }
 
-#devPanel select:focus {
+body select:focus {
     outline: none;
     border-color: #7b61ff;
 }
 
-#devPanel select option {
+body select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+body select option {
     background: #1e1e1e;
     color: #e5e5e5;
 }
@@ -452,6 +464,122 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     gap: 6px;
 }
 
+.asset-caret {
+    background: transparent;
+    border: none;
+    color: #b3b3b3;
+    font-size: 11px;
+    padding: 2px 4px;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+.asset-caret:hover { color: #fff; }
+
+.light-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1px solid #3c3c3c;
+    flex: 0 0 auto;
+}
+.seq-trigger-line .light-swatch {
+    margin-left: auto;
+}
+.light-type-icon {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #b3b3b3;
+    font-size: 12px;
+    flex: 0 0 auto;
+    user-select: none;
+}
+
+.asset-clips-section {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #2c2c2c;
+}
+.asset-clips-heading {
+    color: #8a8a8a;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.asset-clip {
+    background: #171717;
+    border: 1px solid #2c2c2c;
+    border-radius: 4px;
+    padding: 6px;
+    margin-top: 4px;
+}
+.asset-clip-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+.asset-clip.open .asset-clip-head { margin-bottom: 4px; }
+.asset-clip-caret {
+    color: #7a7a7a;
+    font-size: 10px;
+    width: 10px;
+    text-align: center;
+}
+.asset-clip-summary {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    font-size: 10px;
+    color: #8a8a8a;
+}
+.asset-clip-summary-label { margin-right: 2px; }
+.asset-clip-name {
+    flex: 1;
+    color: #e5e5e5;
+    font-size: 11px;
+    font-weight: 500;
+}
+.asset-clip-duration {
+    font-size: 10px;
+}
+.asset-clip-play {
+    background: #2c2c2c;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.asset-clip-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.asset-clip-body .trigger-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+.asset-clip-body .trigger-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: #232323;
+    border: 1px solid #3c3c3c;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: #b3b3b3;
+    cursor: pointer;
+}
+
 .editor-row {
     background: #1e1e1e;
     border: 1px solid #3c3c3c;
@@ -465,16 +593,21 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     margin-bottom: 6px;
 }
 .row-head .name-input,
-.row-head .type-select,
-.row-head .role-select {
+#editorPanel .row-head .type-select,
+#editorPanel .row-head .role-select {
     flex: 1;
-    background: #2c2c2c;
+    background-color: #2c2c2c;
     border: 1px solid #3c3c3c;
     color: #e5e5e5;
     border-radius: 4px;
     padding: 3px 6px;
     font-size: 11px;
     min-width: 0;
+}
+#editorPanel .row-head .type-select,
+#editorPanel .row-head .role-select {
+    padding-right: 20px;
+    background-position: right 5px center;
 }
 .row-head .name-input { flex: 2; }
 .row-head .select-btn,
@@ -1274,6 +1407,30 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     flex-wrap: wrap;
 }
 
+select.color-binding-select {
+    font-size: 11px;
+    padding: 2px 20px 2px 6px;
+    margin-left: 6px;
+    max-width: 140px;
+    background-position: right 5px center;
+}
+
+#editorPanel label:has(> .color-binding-select),
+#editorPanel label:has(> span > .color-binding-select) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+#editorPanel label:has(> .color-binding-select) input[type="color"],
+#editorPanel label:has(> span > .color-binding-select) input[type="color"] {
+    width: 42px;
+    height: 24px;
+    padding: 1px;
+    flex: 0 0 auto;
+}
+
 .skybox-image {
     display: flex;
     flex-direction: column;
@@ -1301,6 +1458,60 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
     line-height: 1.4;
 }
 
+.filter-row {
+    background: #171717;
+    border: 1px solid #2c2c2c;
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+}
+.filter-row-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.filter-row-name {
+    flex: 1;
+    color: #e5e5e5;
+    font-size: 11px;
+    font-weight: 500;
+}
+.filter-enable {
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+}
+.filter-enable input {
+    margin: 0;
+}
+.filter-row-head button {
+    background: #2c2c2c;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.filter-row-head button[disabled] {
+    opacity: 0.35;
+    cursor: default;
+}
+.filter-row-head button:not([disabled]):hover {
+    background: #3c3c3c;
+}
+.filter-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.filters-add-bar {
+    margin-top: 4px;
+    padding-top: 8px;
+}
+
 
 .add-bar {
     display: flex;
@@ -1312,12 +1523,15 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 .add-bar select,
 .add-bar input[type="text"] {
     flex: 1;
-    background: #1e1e1e;
+    background-color: #1e1e1e;
     border: 1px solid #3c3c3c;
     color: #e5e5e5;
     border-radius: 4px;
     padding: 4px 6px;
     font-size: 11px;
+}
+.add-bar select {
+    padding-right: 22px;
 }
 .add-bar button {
     background: #7b61ff;
@@ -1449,11 +1663,11 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 }
 .kf-easing-row select {
     flex: 1;
-    background: #1e1e1e;
+    background-color: #1e1e1e;
     border: 1px solid #3c3c3c;
     color: #e5e5e5;
     border-radius: 4px;
-    padding: 2px 5px;
+    padding: 2px 22px 2px 6px;
     font-size: 11px;
 }
 
@@ -1592,6 +1806,19 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 .target-chip .target-chip-label {
     pointer-events: none;
 }
+.target-chip .target-retarget {
+    background-color: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #e5e5e5;
+    font-size: 11px;
+    padding: 2px 20px 2px 6px;
+    background-position: right 5px center;
+    cursor: pointer;
+    max-width: 180px;
+    margin: -1px 0;
+}
+.target-chip .target-retarget:hover { border-color: #5a5a5a; }
+.target-chip:hover .target-retarget { border-color: #5a5a5a; }
 .target-chip .target-reset,
 .target-chip .target-remove {
     background: transparent;
@@ -1617,11 +1844,11 @@ html.transparent-bg-editor, html.transparent-bg-editor body {
 }
 .target-add-row select {
     flex: 1;
-    background: #1e1e1e;
+    background-color: #1e1e1e;
     border: 1px solid #3c3c3c;
     color: #e5e5e5;
     border-radius: 4px;
-    padding: 2px 6px;
+    padding: 2px 22px 2px 6px;
     font-size: 11px;
 }
 .target-add-row select:disabled {

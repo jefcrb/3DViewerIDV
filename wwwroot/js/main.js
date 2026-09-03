@@ -31,13 +31,14 @@ import { loadSettings } from './storage/settingsStorage.js';
 import { registry } from './editor/registry.js';
 import { sequencer } from './animation/sequencer.js';
 import { clipManager } from './animation/clips.js';
+import { PostFxPipeline } from './scene/postFx.js';
 import { initPerfMonitor, updatePerfMonitor } from './perf/statsMonitor.js';
 import { t } from './i18n.js';
 
 const canvas = document.getElementById('renderCanvas');
 const clock = new THREE.Clock();
 
-let renderer, scene, editorCamera, liveCamera, editorControls, cameraHelper;
+let renderer, scene, editorCamera, liveCamera, editorControls, cameraHelper, postFx;
 
 const TARGET_FPS = 60;
 const MIN_FRAME_TIME = 1000 / TARGET_FPS;
@@ -77,7 +78,13 @@ function animate(currentTime) {
         cameraHelper.update();
     }
 
-    renderer.render(scene, getCurrentCamera());
+    const cam = getCurrentCamera();
+    if (postFx) {
+        postFx.setCamera(cam);
+        postFx.render(delta);
+    } else {
+        renderer.render(scene, cam);
+    }
 
     updatePerfMonitor();
 }
@@ -97,9 +104,27 @@ function animate(currentTime) {
         scene.add(liveCamera);
         scene.add(cameraHelper);
 
-        setupWindowResize([liveCamera, editorCamera], renderer);
+        postFx = new PostFxPipeline(renderer, scene, liveCamera);
+        setupWindowResize([liveCamera, editorCamera], renderer, (w, h) => postFx.setSize(w, h));
 
         registry.init(scene, liveCamera, renderer);
+        // Prime and subscribe: rebuild the composer's filter passes any time world settings change.
+        postFx.applyFilters(registry.world.postFx);
+        registry.addEventListener('world:update', (e) => {
+            postFx.applyFilters(e.detail?.spec?.postFx || []);
+        });
+
+        // Wire clipManager BEFORE hydrate so async asset .glb loads can register their clips
+        // even if they complete during the awaits that follow.
+        registry.addEventListener('assets:loaded', (e) => {
+            const { id, spec, root, animations } = e.detail;
+            if (animations && animations.length) {
+                clipManager.addSource(`asset:${id}`, root, animations, spec.name || id);
+            }
+        });
+        registry.addEventListener('assets:remove', (e) => {
+            clipManager.removeSource(`asset:${e.detail.id}`);
+        });
 
         if (settings?.editor) {
             registry.hydrate(settings.editor);
@@ -127,6 +152,10 @@ function animate(currentTime) {
         }
 
         applyRegistrySlotsToCharacterPositions(registry);
+
+        // Re-sync the static committed mirrors after all startup edits are done, so the
+        // seeded slots and any scene-derived camera become the initial "static" state.
+        registry._commitStatic();
 
         registry.addEventListener('slots:update', () => applyRegistrySlotsToCharacterPositions(registry));
         registry.addEventListener('slots:add', () => applyRegistrySlotsToCharacterPositions(registry));
