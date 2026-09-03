@@ -109,6 +109,7 @@ function assetRow(spec) {
 
     row.innerHTML = `
         <div class="row-head">
+            <button class="asset-caret" title="${isExpanded ? t('assets.collapse') : t('assets.expand')}">${isExpanded ? '▾' : '▸'}</button>
             <input class="name-input" type="text" value="${spec.name}" ${loading ? 'disabled' : ''}>
             <button class="select-btn" title="${t('assets.selectTitle')}">⊕</button>
             <button class="duplicate-btn" title="${t('assets.duplicateTitle')}">⧉</button>
@@ -137,12 +138,8 @@ function assetRow(spec) {
                 <span class="opacity-value">${(spec.opacity * 100).toFixed(0)}%</span>
             </label>
             <div class="asset-clips-section">
-                <div class="asset-clips-heading">${t('assets.builtInAnimations')}</div>
-                ${loading
-                    ? `<div class="hint">${t('assets.loading')}</div>`
-                    : (clips.length === 0
-                        ? `<div class="hint">${t('assets.noClips')}</div>`
-                        : clips.map(clipBlock).join(''))}
+                <div class="asset-clips-heading">${t('assets.builtInAnimations')} (${clips.length})</div>
+                ${loading ? `<div class="hint">${t('assets.loading')}</div>` : clips.map(clipBlock).join('')}
             </div>
         </div>` : `
         <div class="seq-summary">
@@ -152,14 +149,13 @@ function assetRow(spec) {
         </div>`}
     `;
 
-    const rowHead = row.querySelector('.row-head');
-    if (isExpanded) {
-        rowHead.onclick = (e) => {
-            if (e.target.closest('input, button')) return;
-            expandedAssets.delete(spec.id);
-            renderAssetsPanel();
-        };
-    } else {
+    row.querySelector('.asset-caret').onclick = (e) => {
+        e.stopPropagation();
+        if (isExpanded) expandedAssets.delete(spec.id);
+        else expandedAssets.add(spec.id);
+        renderAssetsPanel();
+    };
+    if (!isExpanded) {
         row.onclick = (e) => {
             if (e.target.closest('input, button')) return;
             expandedAssets.add(spec.id);

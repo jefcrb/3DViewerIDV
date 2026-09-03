@@ -4,7 +4,7 @@ import { registry } from './registry.js';
 import { renderLightsPanel } from './lightsPanel.js';
 import { renderSlotsPanel } from './slotsPanel.js';
 import { renderCameraPanel } from './cameraPanel.js';
-import { renderAnimationsPanel } from './animationsPanel.js';
+import { renderAnimationsPanel, serializeCleanRegistry, isPreviewSerializeInProgress } from './animationsPanel.js';
 import { renderWorldPanel } from './worldPanel.js';
 import { renderAssetsPanel } from './assetsPanel.js';
 import { saveSettings } from '../storage/settingsStorage.js';
@@ -85,6 +85,18 @@ export function selectTarget(key) {
         transformControls.attach(liveCamera);
         setGizmoMode('translate');
         transformControls.visible = true;
+        updateProxyVisibility();
+        return;
+    }
+
+    if (key.startsWith('light-target:')) {
+        const id = key.slice('light-target:'.length);
+        const light = registry.getLight(id)?.threeObject;
+        if (light?.target) {
+            transformControls.attach(light.target);
+            setGizmoMode('translate');
+            transformControls.visible = true;
+        }
         updateProxyVisibility();
         return;
     }
@@ -181,7 +193,10 @@ function disposeSlotProxies(removedId) {
 }
 
 function wireGizmoTransforms() {
-    transformControls.addEventListener('change', () => {
+    // 'objectChange' fires ONLY when the attached object is modified by the gizmo itself.
+    // Using plain 'change' would also fire when sampleAt/playback moves the object externally,
+    // causing the scrub-bar write-back to overwrite selected keyframes with interpolated values.
+    transformControls.addEventListener('objectChange', () => {
         if (!selectedTargetId) return;
         if (selectedTargetId === 'liveCamera') {
             registry.updateLiveCamera({
@@ -189,6 +204,15 @@ function wireGizmoTransforms() {
                 rotation: [liveCamera.rotation.x, liveCamera.rotation.y, liveCamera.rotation.z]
             });
             cameraHelper && cameraHelper.update();
+            return;
+        }
+        if (selectedTargetId.startsWith('light-target:')) {
+            const id = selectedTargetId.slice('light-target:'.length);
+            const entry = registry.getLight(id);
+            if (entry?.threeObject?.target) {
+                const p = entry.threeObject.target.position;
+                registry.updateLight(id, { target: [p.x, p.y, p.z] });
+            }
             return;
         }
         if (selectedTargetId.startsWith('light:')) {
@@ -389,8 +413,10 @@ function buildTabs(panel) {
 }
 
 async function saveEditorState(opts = {}) {
+    // Use the clean serializer so an active keyframe preview doesn't bake itself into the
+    // static registry values.
     const editor = {
-        ...registry.serialize(),
+        ...serializeCleanRegistry(),
         sequences: sequencer.serialize(),
         clips: clipManager.serialize()
     };
@@ -443,7 +469,8 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
 
     registry.addEventListener('change', (e) => {
         refreshSlotProxies();
-        scheduleAutoSave();
+        // Skip during a preview-restore/reapply pass — the mutations there aren't user edits.
+        if (!isPreviewSerializeInProgress()) scheduleAutoSave();
         const type = e.detail?.type;
         if (type === 'lights:update' || type === 'slots:update' || type === 'liveCamera:update' || type === 'assets:update') {
             syncPanelInputs(e.detail);
@@ -451,7 +478,7 @@ export async function initEditor({ scene: sceneRef, editorCamera: ec, liveCamera
     });
     registry.addEventListener('slots:remove', (e) => disposeSlotProxies(e.detail.id));
     registry.addEventListener('lights:remove', (e) => {
-        if (selectedTargetId === `light:${e.detail.id}`) detachGizmo();
+        if (selectedTargetId === `light:${e.detail.id}` || selectedTargetId === `light-target:${e.detail.id}`) detachGizmo();
     });
     registry.addEventListener('assets:remove', (e) => {
         if (selectedTargetId === `asset:${e.detail.id}`) detachGizmo();

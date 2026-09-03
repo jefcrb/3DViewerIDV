@@ -153,6 +153,10 @@ function animate(currentTime) {
 
         applyRegistrySlotsToCharacterPositions(registry);
 
+        // Re-sync the static committed mirrors after all startup edits are done, so the
+        // seeded slots and any scene-derived camera become the initial "static" state.
+        registry._commitStatic();
+
         registry.addEventListener('slots:update', () => applyRegistrySlotsToCharacterPositions(registry));
         registry.addEventListener('slots:add', () => applyRegistrySlotsToCharacterPositions(registry));
         registry.addEventListener('slots:remove', () => applyRegistrySlotsToCharacterPositions(registry));

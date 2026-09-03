@@ -464,6 +464,38 @@ body select option {
     gap: 6px;
 }
 
+.asset-caret {
+    background: transparent;
+    border: none;
+    color: #b3b3b3;
+    font-size: 11px;
+    padding: 2px 4px;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+.asset-caret:hover { color: #fff; }
+
+.light-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1px solid #3c3c3c;
+    flex: 0 0 auto;
+}
+.seq-trigger-line .light-swatch {
+    margin-left: auto;
+}
+.light-type-icon {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #b3b3b3;
+    font-size: 12px;
+    flex: 0 0 auto;
+    user-select: none;
+}
+
 .asset-clips-section {
     margin-top: 8px;
     padding-top: 6px;

@@ -82,6 +82,8 @@ const PROP_KINDS = {
     fov: 'number',
     intensity: 'number',
     opacity: 'number',
+    penumbra: 'number',
+    coneOpacity: 'number',
     color: 'color',
     extras: 'extras'
 };
@@ -151,17 +153,25 @@ function effectiveEntryValue(entry) {
 }
 
 function captureLight(spec) {
-    return {
+    const out = {
         intensity: spec.intensity,
         color: typeof spec.color === 'string' ? spec.color : intToHex(spec.color),
         position: [...spec.position],
         target: [...spec.target],
         extras: {
             angle: spec.extras?.angle,
-            penumbra: spec.extras?.penumbra,
             distance: spec.extras?.distance
         }
     };
+    if (spec.type === 'Spot') {
+        // Own channels for Spot so the scrub bar shows independent rows.
+        out.penumbra = spec.extras?.penumbra;
+        out.coneOpacity = spec.extras?.coneOpacity;
+    } else {
+        // Non-spot: keep penumbra in extras (legacy shape) — irrelevant to the light anyway.
+        out.extras.penumbra = spec.extras?.penumbra;
+    }
+    return out;
 }
 
 function captureSlot(spec) {
@@ -236,12 +246,17 @@ export function availableTargets() {
 const SLOT_PROPS = ['position', 'rotation', 'scale'];
 const CAMERA_PROPS = ['position', 'rotation', 'fov'];
 const LIGHT_PROPS = ['position', 'target', 'intensity', 'color', 'extras'];
+// Spot-only: penumbra + coneOpacity get their own channels so they can be scrubbed independently.
+const LIGHT_PROPS_SPOT = ['position', 'target', 'intensity', 'color', 'extras', 'penumbra', 'coneOpacity'];
 const ASSET_PROPS = ['position', 'rotation', 'scale', 'opacity'];
 
 function propsFor(target) {
     if (target === 'liveCamera') return CAMERA_PROPS;
     if (target.startsWith('slot:')) return SLOT_PROPS;
-    if (target.startsWith('light:')) return LIGHT_PROPS;
+    if (target.startsWith('light:')) {
+        const spec = registry.getLight(target.slice(6))?.spec;
+        return spec?.type === 'Spot' ? LIGHT_PROPS_SPOT : LIGHT_PROPS;
+    }
     if (target.startsWith('asset:')) return ASSET_PROPS;
     return [];
 }
@@ -290,13 +305,29 @@ function applyLightSnapshot(id, vals) {
     if (vals.color && light.color) light.color.setHex(hexToInt(vals.color));
     if (vals.position && !light.isAmbientLight) light.position.set(...vals.position);
     if (vals.target && light.target) light.target.position.set(...vals.target);
+    // Top-level Spot channels — split out of extras so the scrub bar can key them independently.
+    if (vals.penumbra != null && light.isSpotLight) light.penumbra = vals.penumbra;
+    if (vals.coneOpacity != null) {
+        const o = Math.max(0, Math.min(1, vals.coneOpacity));
+        if (entry.coneMesh?.material?.uniforms?.uOpacity) entry.coneMesh.material.uniforms.uOpacity.value = o;
+        if (entry.spec.extras) entry.spec.extras.coneOpacity = o;
+    }
     if (vals.extras) {
         if (vals.extras.angle != null && light.isSpotLight) light.angle = vals.extras.angle;
         if (vals.extras.penumbra != null && light.isSpotLight) light.penumbra = vals.extras.penumbra;
         if (vals.extras.distance != null && (light.isSpotLight || light.isPointLight)) {
             light.distance = vals.extras.distance;
         }
+        // Cone opacity animates without a spec round-trip; feed the shader uniform directly.
+        if (vals.extras.coneOpacity != null && entry.coneMesh?.material?.uniforms?.uOpacity) {
+            const o = Math.max(0, Math.min(1, vals.extras.coneOpacity));
+            entry.coneMesh.material.uniforms.uOpacity.value = o;
+            if (entry.spec.extras) entry.spec.extras.coneOpacity = o;
+        }
     }
+    // Cone shader/orientation reads from spec normally; sequencer bypasses spec, so pull
+    // color and pose from the live light so the cone follows animated color/position/target.
+    if (light.isSpotLight && entry.coneMesh) registry.syncSpotConeLive(id);
 }
 
 function applyAssetSnapshot(id, vals) {
@@ -366,44 +397,6 @@ function applyTrackValue(trackKey, value) {
     } else if (target.startsWith('asset:')) {
         applyAssetSnapshot(target.slice(6), { [prop]: value });
     }
-}
-
-function restoreFromRegistry(animatedKeys) {
-    for (const id of animatedKeys.lights) {
-        const entry = registry.getLight(id);
-        if (entry) registry._applyLightSpec(entry.threeObject, entry.spec);
-    }
-    for (const id of animatedKeys.slots) {
-        const slot = registry.getSlot(id);
-        if (!slot) continue;
-        applySlotSnapshot(id, { position: slot.position, rotation: slot.rotation });
-    }
-    for (const id of animatedKeys.assets) {
-        const entry = registry.getAsset(id);
-        if (entry) registry._applyAssetSpec(entry, entry.spec);
-    }
-    if (animatedKeys.liveCamera) {
-        const cam = registry.liveCameraRef;
-        const spec = registry.liveCamera;
-        if (cam && spec) {
-            cam.position.set(...spec.position);
-            if (spec.rotation) cam.rotation.set(spec.rotation[0], spec.rotation[1], spec.rotation[2]);
-            cam.fov = spec.fov;
-            cam.updateProjectionMatrix();
-        }
-    }
-}
-
-function animatedKeysOfTracks(seq) {
-    const keys = { lights: new Set(), slots: new Set(), assets: new Set(), liveCamera: false };
-    for (const trackKey of Object.keys(seq.tracks || {})) {
-        const { target } = splitTrackKey(trackKey);
-        if (target === 'liveCamera') keys.liveCamera = true;
-        else if (target.startsWith('slot:')) keys.slots.add(target.slice(5));
-        else if (target.startsWith('light:')) keys.lights.add(target.slice(6));
-        else if (target.startsWith('asset:')) keys.assets.add(target.slice(6));
-    }
-    return { lights: [...keys.lights], slots: [...keys.slots], assets: [...keys.assets], liveCamera: keys.liveCamera };
 }
 
 function inferTargetsFromTracks(tracks) {
@@ -1003,7 +996,7 @@ class Sequencer extends EventTarget {
         const runner = this.active.get(id);
         if (!runner) return;
         this.active.delete(id);
-        restoreFromRegistry(animatedKeysOfTracks(runner.sequence));
+        // Freeze at whatever the last tick wrote — consistent with natural completion.
         this._emit('seq:stop', { id });
     }
 

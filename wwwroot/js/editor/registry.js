@@ -99,6 +99,41 @@ function intToHex(n) {
     return '#' + n.toString(16).padStart(6, '0');
 }
 
+// Volumetric spot-cone shader — fresnel makes silhouette edges pick up more density
+// (mimicking longer view-ray travel through the illuminated volume), length falloff
+// keeps it brightest near the emitter, tip-soft avoids a hard point at the source.
+const SPOT_CONE_VERTEX = /* glsl */`
+varying vec3 vLocalPos;
+varying vec3 vWorldNormal;
+varying vec3 vViewDir;
+void main() {
+    vLocalPos = position;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vViewDir = normalize(cameraPosition - worldPos.xyz);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+}`;
+const SPOT_CONE_FRAGMENT = /* glsl */`
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uLength;
+uniform float uMaxRadius;
+varying vec3 vLocalPos;
+varying vec3 vWorldNormal;
+varying vec3 vViewDir;
+void main() {
+    float heightT = clamp(-vLocalPos.y / uLength, 0.0, 1.0);
+    float lengthFalloff = pow(1.0 - heightT, 1.5);
+    float tipSoft = smoothstep(0.0, 0.03, heightT);
+    float NdotV = abs(dot(normalize(vWorldNormal), normalize(vViewDir)));
+    float fresnel = pow(1.0 - NdotV, 2.5);
+    float coneR = max(uMaxRadius * heightT, 1e-4);
+    float radial = clamp(length(vLocalPos.xz) / coneR, 0.0, 1.0);
+    float coreGlow = pow(1.0 - radial, 3.0);
+    float alpha = uOpacity * lengthFalloff * tipSoft * (fresnel + 0.35 * coreGlow);
+    gl_FragColor = vec4(uColor, alpha);
+}`;
+
 function vecToArr(v) {
     if (Array.isArray(v)) return [v[0] || 0, v[1] || 0, v[2] || 0];
     if (v && typeof v === 'object') return [v.x || 0, v.y || 0, v.z || 0];
@@ -149,7 +184,19 @@ class Registry extends EventTarget {
             rotation: [0, 0, 0],
             fov: 50
         };
+        // Static "committed" mirrors — only mutated by explicit user commits, never by
+        // animation. serialize() reads these so playback/scrub can never leak into the
+        // saved static state. staticLight/Slot/Asset maps mirror the spec, keyed by id.
+        this.staticLiveCamera = {
+            position: [...this.liveCamera.position],
+            rotation: [...this.liveCamera.rotation],
+            fov: this.liveCamera.fov
+        };
+        this.staticLights = new Map();
+        this.staticSlots = new Map();
+        this.staticAssets = new Map();
         this.world = { ...WORLD_DEFAULTS };
+        this.staticWorld = { ...this.world };
         onTeamColorsChange(() => this.reapplyBoundColors());
     }
 
@@ -159,6 +206,7 @@ class Registry extends EventTarget {
                 || (entry.spec.groundColorBinding && entry.spec.groundColorBinding !== 'static');
             if (!usesBinding) continue;
             this._applyLightSpec(entry.threeObject, entry.spec);
+            this._syncSpotCone(entry);
             this.emit('lights:update', { id, spec: entry.spec, threeObject: entry.threeObject });
         }
         if (this.world.backgroundColorBinding && this.world.backgroundColorBinding !== 'static') {
@@ -193,6 +241,45 @@ class Registry extends EventTarget {
                 this.world.toneMappingExposure = renderer.toneMappingExposure;
             }
         }
+        this._commitStatic();
+    }
+
+    // Snapshot the current registry state into the static mirrors. Called after init/hydrate
+    // so the mirrors start in sync, and after any user commit via updateXxx.
+    _commitStatic() {
+        this.staticLiveCamera = { ...this.liveCamera, position: [...this.liveCamera.position], rotation: [...this.liveCamera.rotation] };
+        this.staticWorld = { ...this.world };
+        this.staticLights.clear();
+        for (const [id, entry] of this.lights) this.staticLights.set(id, this._cloneLightSpec(entry.spec));
+        this.staticSlots.clear();
+        for (const [id, spec] of this.slots) this.staticSlots.set(id, this._cloneSlotSpec(spec));
+        this.staticAssets.clear();
+        for (const [id, entry] of this.assets) this.staticAssets.set(id, this._cloneAssetSpec(entry.spec));
+    }
+
+    _cloneLightSpec(spec) {
+        return {
+            ...spec,
+            position: [...(spec.position || [])],
+            target: [...(spec.target || [])],
+            extras: { ...(spec.extras || {}) }
+        };
+    }
+    _cloneSlotSpec(spec) {
+        return {
+            ...spec,
+            position: [...(spec.position || [])],
+            rotation: [...(spec.rotation || [])],
+            scale: [...(spec.scale || [])]
+        };
+    }
+    _cloneAssetSpec(spec) {
+        return {
+            ...spec,
+            position: [...(spec.position || [])],
+            rotation: [...(spec.rotation || [])],
+            scale: [...(spec.scale || [])]
+        };
     }
 
     emit(type, detail) {
@@ -204,11 +291,14 @@ class Registry extends EventTarget {
         const id = spec.id || newId('light');
         const normalized = this._normalizeLightSpec({ ...spec, id });
         const threeObject = this._createThreeLight(normalized);
-        this.lights.set(id, { spec: normalized, threeObject });
+        const entry = { spec: normalized, threeObject, coneMesh: null };
+        this.lights.set(id, entry);
+        this.staticLights.set(id, this._cloneLightSpec(normalized));
         this.scene.add(threeObject);
         if (threeObject.target && threeObject.target.parent !== this.scene) {
             this.scene.add(threeObject.target);
         }
+        this._syncSpotCone(entry);
         this.emit('lights:add', { id, spec: normalized, threeObject });
         return id;
     }
@@ -221,7 +311,9 @@ class Registry extends EventTarget {
             this.scene.remove(entry.threeObject.target);
         }
         if (entry.threeObject.dispose) entry.threeObject.dispose();
+        this._disposeSpotCone(entry);
         this.lights.delete(id);
+        this.staticLights.delete(id);
         this.emit('lights:remove', { id });
     }
 
@@ -256,7 +348,9 @@ class Registry extends EventTarget {
             return this.addLight(newSpec);
         }
         entry.spec = newSpec;
+        this.staticLights.set(id, this._cloneLightSpec(newSpec));
         this._applyLightSpec(entry.threeObject, newSpec);
+        this._syncSpotCone(entry);
         this.emit('lights:update', { id, spec: newSpec, threeObject: entry.threeObject });
     }
 
@@ -359,6 +453,97 @@ class Registry extends EventTarget {
         }
     }
 
+    _syncSpotCone(entry) {
+        const spec = entry.spec;
+        const wantsCone = spec.type === 'Spot' && !!spec.extras?.visibleCone;
+        if (!wantsCone) { this._disposeSpotCone(entry); return; }
+
+        const angle = spec.extras?.angle ?? Math.PI / 6;
+        // SpotLight distance of 0 = infinite; fall back to the distance from light to target.
+        const specDist = spec.extras?.distance ?? 0;
+        const fallback = new THREE.Vector3(...spec.position).distanceTo(new THREE.Vector3(...spec.target)) || 10;
+        const length = specDist > 0 ? specDist : fallback;
+        const radius = Math.max(0.001, length * Math.tan(angle));
+        const color = new THREE.Color(hexToInt(resolveColor(spec.color, spec.colorBinding)));
+        const opacity = Math.max(0, Math.min(1, spec.extras?.coneOpacity ?? 0.2));
+
+        // Cheap path: same geometry size, just update uniforms + orientation.
+        const cur = entry.coneMesh;
+        if (cur && cur.userData.length === length && cur.userData.radius === radius) {
+            cur.material.uniforms.uColor.value.copy(color);
+            cur.material.uniforms.uOpacity.value = opacity;
+            this._orientSpotCone(cur, spec);
+            return;
+        }
+
+        this._disposeSpotCone(entry);
+        const geom = new THREE.ConeGeometry(radius, length, 48, 1, true);
+        // ConeGeometry has tip at +Y; shift so tip sits at origin pointing -Y.
+        geom.translate(0, -length / 2, 0);
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uColor: { value: color },
+                uOpacity: { value: opacity },
+                uLength: { value: length },
+                uMaxRadius: { value: radius }
+            },
+            vertexShader: SPOT_CONE_VERTEX,
+            fragmentShader: SPOT_CONE_FRAGMENT,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geom, material);
+        mesh.userData.length = length;
+        mesh.userData.radius = radius;
+        mesh.renderOrder = 1;
+        this._orientSpotCone(mesh, spec);
+        this.scene.add(mesh);
+        entry.coneMesh = mesh;
+    }
+
+    _orientSpotCone(mesh, spec) {
+        const from = new THREE.Vector3(...spec.position);
+        const to = new THREE.Vector3(...spec.target);
+        const dir = to.sub(from);
+        if (dir.lengthSq() === 0) dir.set(0, -1, 0);
+        dir.normalize();
+        // Align cone's -Y axis (its downward direction) with the light-to-target vector.
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+        mesh.position.set(...spec.position);
+        mesh.quaternion.copy(q);
+    }
+
+    _disposeSpotCone(entry) {
+        if (!entry.coneMesh) return;
+        this.scene.remove(entry.coneMesh);
+        entry.coneMesh.geometry.dispose();
+        entry.coneMesh.material.dispose();
+        entry.coneMesh = null;
+    }
+
+    // Sync cone color and orientation from the live three.js light — used by the sequencer,
+    // which mutates the light object directly and bypasses spec (and thus _syncSpotCone).
+    // Doesn't rebuild geometry (angle/distance size drift is not handled — would need per-frame
+    // geometry rebuilds during animation, which is prohibitively expensive).
+    syncSpotConeLive(id) {
+        const entry = this.lights.get(id);
+        if (!entry?.coneMesh) return;
+        const light = entry.threeObject;
+        if (!light.isSpotLight) return;
+        const cone = entry.coneMesh;
+        cone.material.uniforms.uColor.value.copy(light.color);
+        const from = light.position;
+        const to = light.target?.position ?? from;
+        const dir = new THREE.Vector3().subVectors(to, from);
+        if (dir.lengthSq() === 0) dir.set(0, -1, 0);
+        dir.normalize();
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+        cone.position.copy(from);
+        cone.quaternion.copy(q);
+    }
+
     addSlot(spec) {
         const role = spec.role || spec.id;
         if (!VALID_SLOT_ROLES.includes(role)) {
@@ -372,6 +557,7 @@ class Registry extends EventTarget {
         const id = role; // identity is the role itself
         const normalized = this._normalizeSlotSpec({ ...spec, id, role });
         this.slots.set(id, normalized);
+        this.staticSlots.set(id, this._cloneSlotSpec(normalized));
         this.emit('slots:add', { id, spec: normalized });
         return id;
     }
@@ -383,6 +569,7 @@ class Registry extends EventTarget {
     removeSlot(id) {
         if (!this.slots.has(id)) return;
         this.slots.delete(id);
+        this.staticSlots.delete(id);
         this.emit('slots:remove', { id });
     }
 
@@ -391,6 +578,7 @@ class Registry extends EventTarget {
         if (!cur) return;
         const newSpec = this._normalizeSlotSpec({ ...cur, ...partial });
         this.slots.set(id, newSpec);
+        this.staticSlots.set(id, this._cloneSlotSpec(newSpec));
         this.emit('slots:update', { id, spec: newSpec });
     }
 
@@ -477,6 +665,12 @@ class Registry extends EventTarget {
         }
 
         Object.assign(this.liveCamera, partial);
+        // Mirror into the static committed state — user commit.
+        this.staticLiveCamera = {
+            ...this.liveCamera,
+            position: [...this.liveCamera.position],
+            rotation: [...this.liveCamera.rotation]
+        };
 
         if (this.liveCameraRef) {
             if (partial.position) this.liveCameraRef.position.set(...vecToArr(partial.position));
@@ -497,6 +691,7 @@ class Registry extends EventTarget {
 
     updateWorld(partial) {
         Object.assign(this.world, partial);
+        this.staticWorld = { ...this.world };
         this._applyWorldSpec();
         this.emit('world:update', { spec: { ...this.world } });
     }
@@ -675,6 +870,7 @@ class Registry extends EventTarget {
         const normalized = this._normalizeAssetSpec({ ...spec, id });
         const entry = { spec: normalized, root: null, animations: [], loading: true };
         this.assets.set(id, entry);
+        this.staticAssets.set(id, this._cloneAssetSpec(normalized));
         this.emit('assets:add', { id, spec: normalized });
         this._loadAssetGltf(entry);
         return id;
@@ -745,6 +941,7 @@ class Registry extends EventTarget {
             });
         }
         this.assets.delete(id);
+        this.staticAssets.delete(id);
         this.emit('assets:remove', { id, filename: entry.spec.filename });
     }
 
@@ -752,6 +949,7 @@ class Registry extends EventTarget {
         const entry = this.assets.get(id);
         if (!entry) return;
         entry.spec = this._normalizeAssetSpec({ ...entry.spec, ...partial });
+        this.staticAssets.set(id, this._cloneAssetSpec(entry.spec));
         this._applyAssetSpec(entry, entry.spec);
         this.emit('assets:update', { id, spec: entry.spec, root: entry.root });
     }
@@ -764,13 +962,15 @@ class Registry extends EventTarget {
         return Array.from(this.assets.values()).map(e => e.spec);
     }
 
+    // Save reads from the static committed mirrors, never from the live specs — animation
+    // and preview can freely mutate the live spec without the change ever reaching disk.
     serialize() {
         return {
-            lights: this.listLights(),
-            slots: this.listSlots(),
-            assets: this.listAssets(),
-            liveCamera: { ...this.liveCamera },
-            world: { ...this.world }
+            lights: Array.from(this.staticLights.values()),
+            slots: Array.from(this.staticSlots.values()),
+            assets: Array.from(this.staticAssets.values()),
+            liveCamera: { ...this.staticLiveCamera, position: [...this.staticLiveCamera.position], rotation: [...this.staticLiveCamera.rotation] },
+            world: { ...this.staticWorld }
         };
     }
 
@@ -800,6 +1000,7 @@ class Registry extends EventTarget {
         if (data.liveCamera) {
             this.updateLiveCamera(data.liveCamera);
         }
+        this._commitStatic();
     }
 
 }

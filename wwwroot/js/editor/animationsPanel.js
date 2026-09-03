@@ -1,4 +1,4 @@
-import { sequencer, EASING_NAMES, ease, availableTargets, captureSnapshot } from '../animation/sequencer.js';
+import { sequencer, EASING_NAMES, ease, availableTargets, captureSnapshot, applySnapshot as applySnapshotToScene } from '../animation/sequencer.js';
 import { clipManager } from '../animation/clips.js';
 import { listKnownEvents, playSequence, stopSequence, playClip, stopClip } from '../animation/triggers.js';
 import { registry, intToHex } from './registry.js';
@@ -1190,55 +1190,25 @@ function updatePlayheadAndTime() {
 // Set while the panel writes to the registry, to skip the sync listener and avoid feedback loops.
 let suppressSync = false;
 
+// Apply a preview/keyframe snapshot to the three.js scene ONLY — never to registry specs.
+// This keeps preview state fully separated from the "static" state that gets saved to disk.
+// Panel inputs on lights/slots/etc show static spec values, unaffected by preview.
 function applySnapshotToRegistry(snapshot, target) {
     if (!snapshot || !target) return;
-    suppressSync = true;
-    try {
-        if (target === 'liveCamera' && snapshot.liveCamera) {
-            const c = snapshot.liveCamera;
-            const patch = {};
-            if (Array.isArray(c.position)) patch.position = [...c.position];
-            if (Array.isArray(c.rotation)) patch.rotation = [...c.rotation];
-            if (typeof c.fov === 'number') patch.fov = c.fov;
-            if (Object.keys(patch).length) registry.updateLiveCamera(patch);
-        } else if (target.startsWith('light:')) {
-            const id = target.slice('light:'.length);
-            const v = snapshot.lights?.[id];
-            const cur = registry.getLight(id)?.spec;
-            if (v && cur) {
-                const patch = {};
-                if (typeof v.intensity === 'number') patch.intensity = v.intensity;
-                if (v.color) patch.color = v.color;
-                if (Array.isArray(v.position)) patch.position = [...v.position];
-                if (Array.isArray(v.target)) patch.target = [...v.target];
-                if (v.extras) patch.extras = { ...(cur.extras || {}), ...v.extras };
-                if (Object.keys(patch).length) registry.updateLight(id, patch);
-            }
-        } else if (target.startsWith('slot:')) {
-            const id = target.slice('slot:'.length);
-            const v = snapshot.slots?.[id];
-            if (v) {
-                const patch = {};
-                if (Array.isArray(v.position)) patch.position = [...v.position];
-                if (Array.isArray(v.rotation)) patch.rotation = [...v.rotation];
-                if (Array.isArray(v.scale)) patch.scale = [...v.scale];
-                if (Object.keys(patch).length) registry.updateSlot(id, patch);
-            }
-        } else if (target.startsWith('asset:')) {
-            const id = target.slice('asset:'.length);
-            const v = snapshot.assets?.[id];
-            if (v) {
-                const patch = {};
-                if (Array.isArray(v.position)) patch.position = [...v.position];
-                if (Array.isArray(v.rotation)) patch.rotation = [...v.rotation];
-                if (Array.isArray(v.scale)) patch.scale = [...v.scale];
-                if (typeof v.opacity === 'number') patch.opacity = v.opacity;
-                if (Object.keys(patch).length) registry.updateAsset(id, patch);
-            }
-        }
-    } finally {
-        suppressSync = false;
+    // Filter the snapshot to just the target so we don't touch other objects.
+    const filtered = { lights: {}, slots: {}, assets: {}, liveCamera: null };
+    if (target === 'liveCamera') filtered.liveCamera = snapshot.liveCamera || null;
+    else if (target.startsWith('light:')) {
+        const id = target.slice('light:'.length);
+        if (snapshot.lights?.[id]) filtered.lights[id] = snapshot.lights[id];
+    } else if (target.startsWith('slot:')) {
+        const id = target.slice('slot:'.length);
+        if (snapshot.slots?.[id]) filtered.slots[id] = snapshot.slots[id];
+    } else if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        if (snapshot.assets?.[id]) filtered.assets[id] = snapshot.assets[id];
     }
+    applySnapshotToScene(filtered);
 }
 
 // While a keyframe is being previewed, scene edits get written back into its snapshot.
@@ -1371,6 +1341,17 @@ function deselectKeyframePreview(seq, kf) {
     previewAnchors.delete(seq.id);
 }
 
+// Kept as no-ops for backwards-compat; the registry's static-committed mirrors now
+// guarantee that serialize() returns only user-committed values, so no wrapper needed.
+export let previewSerializeInProgress = false;
+export function isPreviewSerializeInProgress() { return previewSerializeInProgress; }
+
+// Thin passthrough — registry.serialize() reads from the static mirrors, which are
+// only ever updated by explicit user commits. Animation/preview writes to three.js only.
+export function serializeCleanRegistry() {
+    return registry.serialize();
+}
+
 // Defers via setTimeout 0 so cascading renders complete before adding the pulse class.
 function pulseKeyframeRow(seqId, t) {
     setTimeout(() => {
@@ -1442,22 +1423,35 @@ function diffSummary(seq, kf, prevKf) {
     const parts = [];
     const start = t('animations.startPrefix');
 
+    // Only include fields whose track has entries — snapshot values for empty tracks are
+    // undefined, and reading .toFixed() / etc on them would throw.
     if (target === 'liveCamera') {
         const c = cur.liveCamera;
         if (!c) return '';
         const p = prev?.liveCamera;
-        if (!p) return `${start} · pos ${fmtVec(c.position)} · fov ${Math.round(c.fov)}`;
+        if (!p) {
+            if (Array.isArray(c.position)) parts.push(`pos ${fmtVec(c.position)}`);
+            if (typeof c.fov === 'number') parts.push(`fov ${Math.round(c.fov)}`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
-        if (Math.abs(c.fov - p.fov) > 0.5) parts.push(`fov ${Math.round(c.fov)}`);
+        if (typeof c.fov === 'number' && typeof p.fov === 'number' && Math.abs(c.fov - p.fov) > 0.5) {
+            parts.push(`fov ${Math.round(c.fov)}`);
+        }
     } else if (target.startsWith('light:')) {
         const id = target.slice('light:'.length);
         const c = cur.lights?.[id];
         if (!c) return '';
         const p = prev?.lights?.[id];
-        if (!p) return `${start} · int ${c.intensity.toFixed(2)} · col ${c.color}`;
-        if (Math.abs((c.intensity ?? 0) - (p.intensity ?? 0)) > DIFF_EPS) parts.push(`int ${c.intensity.toFixed(2)}`);
-        if (c.color !== p.color) parts.push(`col ${c.color}`);
+        if (!p) {
+            if (typeof c.intensity === 'number') parts.push(`int ${c.intensity.toFixed(2)}`);
+            if (c.color) parts.push(`col ${c.color}`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
+        if (typeof c.intensity === 'number' && typeof p.intensity === 'number'
+            && Math.abs(c.intensity - p.intensity) > DIFF_EPS) parts.push(`int ${c.intensity.toFixed(2)}`);
+        if (c.color && p.color && c.color !== p.color) parts.push(`col ${c.color}`);
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.target, p.target)) parts.push(`tgt ${fmtVec(c.target)}`);
     } else if (target.startsWith('slot:')) {
@@ -1465,10 +1459,28 @@ function diffSummary(seq, kf, prevKf) {
         const c = cur.slots?.[id];
         if (!c) return '';
         const p = prev?.slots?.[id];
-        if (!p) return `${start} · pos ${fmtVec(c.position)}`;
+        if (!p) {
+            if (Array.isArray(c.position)) parts.push(`pos ${fmtVec(c.position)}`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
         if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
         if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
         if (arraysDiffer(c.scale, p.scale, 0.005)) parts.push(`scl ${fmtVec(c.scale, 2)}`);
+    } else if (target.startsWith('asset:')) {
+        const id = target.slice('asset:'.length);
+        const c = cur.assets?.[id];
+        if (!c) return '';
+        const p = prev?.assets?.[id];
+        if (!p) {
+            if (Array.isArray(c.position)) parts.push(`pos ${fmtVec(c.position)}`);
+            if (typeof c.opacity === 'number') parts.push(`op ${(c.opacity * 100).toFixed(0)}%`);
+            return parts.length ? `${start} · ${parts.join(' · ')}` : t('animations.noChange');
+        }
+        if (arraysDiffer(c.position, p.position)) parts.push(`pos ${fmtVec(c.position)}`);
+        if (arraysDiffer(c.rotation, p.rotation)) parts.push(`rot ${fmtVecDeg(c.rotation)}`);
+        if (arraysDiffer(c.scale, p.scale, 0.005)) parts.push(`scl ${fmtVec(c.scale, 2)}`);
+        if (typeof c.opacity === 'number' && typeof p.opacity === 'number'
+            && Math.abs(c.opacity - p.opacity) > DIFF_EPS) parts.push(`op ${(c.opacity * 100).toFixed(0)}%`);
     }
 
     return parts.length ? parts.join(' · ') : t('animations.noChange');
@@ -1562,8 +1574,15 @@ function lightSection(kf, lightId, seq) {
                 <label>${t('lights.angle')}°
                     <input type="number" step="1" min="0" max="90" value="${((l.extras?.angle ?? 0) * RAD2DEG).toFixed(1)}" data-path="lights.${lightId}.extras.angle" data-deg>
                 </label>
+            `) : ''}
+            ${isSpot ? propRowIf(seq, tk('penumbra'), `
                 <label>${t('lights.penumbra')}
-                    <input type="number" step="0.05" min="0" max="1" value="${l.extras?.penumbra ?? 0}" data-path="lights.${lightId}.extras.penumbra">
+                    <input type="number" step="0.05" min="0" max="1" value="${l.penumbra ?? 0}" data-path="lights.${lightId}.penumbra">
+                </label>
+            `) : ''}
+            ${isSpot ? propRowIf(seq, tk('coneOpacity'), `
+                <label>${t('lights.coneOpacity')}
+                    <input type="number" step="0.05" min="0" max="1" value="${l.coneOpacity ?? 0.2}" data-path="lights.${lightId}.coneOpacity">
                 </label>
             `) : ''}
         </div>
