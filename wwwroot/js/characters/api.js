@@ -1,6 +1,6 @@
 import { state as sceneState, hideDummyModels } from '../scene/loader.js';
-import { state as characterState, loadCharacterModel } from './loader.js';
-import { playOutroAnimation } from '../customization/outroAnimation.js';
+import { state as characterState, loadCharacterModel, disposeCharacterData } from './loader.js';
+import { playOutro } from './transitions.js';
 import { fire } from '../animation/triggers.js';
 import { updateTeamColors } from '../state/teamColors.js';
 import { registry } from '../editor/registry.js';
@@ -138,8 +138,12 @@ export function setupCharacterAPI(scene) {
         if (hunterUrl !== (characterState.loadedCharacters.hunter?.url || null)) {
             cancelPending('hunter');
             if (characterState.loadedCharacters.hunter) {
-                scene.remove(characterState.loadedCharacters.hunter.model);
+                const outgoing = characterState.loadedCharacters.hunter;
                 characterState.loadedCharacters.hunter = null;
+                playOutro(outgoing.model).then(() => {
+                    scene.remove(outgoing.model);
+                    disposeCharacterData(outgoing);
+                });
                 console.log('Removed old hunter');
             }
             if (hunterUrl && hunterTransform) {
@@ -162,11 +166,12 @@ export function setupCharacterAPI(scene) {
                 if (survivorUrl !== (characterState.loadedCharacters.survivors[index]?.url || null)) {
                     cancelPending(`survivor_${index + 1}`);
                     if (characterState.loadedCharacters.survivors[index]) {
-                        const oldModel = characterState.loadedCharacters.survivors[index].model;
-                        playOutroAnimation(oldModel).then(() => {
-                            scene.remove(oldModel);
-                        });
+                        const outgoing = characterState.loadedCharacters.survivors[index];
                         characterState.loadedCharacters.survivors[index] = null;
+                        playOutro(outgoing.model).then(() => {
+                            scene.remove(outgoing.model);
+                            disposeCharacterData(outgoing);
+                        });
                         console.log(`Removed old survivor at position ${index}`);
                     }
                     if (survivorUrl && survivorTransforms[index]) {
@@ -183,11 +188,12 @@ export function setupCharacterAPI(scene) {
         for (let i = (jsonData.survivors?.length || 0); i < 4; i++) {
             if (characterState.loadedCharacters.survivors[i]) {
                 cancelPending(`survivor_${i + 1}`);
-                const oldModel = characterState.loadedCharacters.survivors[i].model;
-                playOutroAnimation(oldModel).then(() => {
-                    scene.remove(oldModel);
-                });
+                const outgoing = characterState.loadedCharacters.survivors[i];
                 characterState.loadedCharacters.survivors[i] = null;
+                playOutro(outgoing.model).then(() => {
+                    scene.remove(outgoing.model);
+                    disposeCharacterData(outgoing);
+                });
                 console.log(`Removed survivor at position ${i} (no longer in data)`);
             }
         }

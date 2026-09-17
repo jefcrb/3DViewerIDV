@@ -214,6 +214,24 @@ export function renderWorldPanel() {
             </div>
         </div>
         <div class="editor-row">
+            <div class="row-head"><strong>${t('world.characterTransitions')}</strong></div>
+            <div class="row-body">
+                <label><input type="checkbox" id="worldCharFadeEnabled" ${w.characterFadeEnabled ? 'checked' : ''}> ${t('world.characterFadeEnabled')}</label>
+                <label class="slider-row">${t('world.characterFadeDuration')}
+                    <input type="range" id="worldCharFadeDuration" min="0" max="2000" step="50" value="${w.characterFadeDuration}" ${w.characterFadeEnabled ? '' : 'disabled'}>
+                    <span id="worldCharFadeDurationValue">${w.characterFadeDuration} ms</span>
+                </label>
+                <label class="slider-row">${t('world.characterIntroDelay')}
+                    <input type="range" id="worldCharIntroDelay" min="0" max="5000" step="50" value="${w.characterIntroDelay}">
+                    <span id="worldCharIntroDelayValue">${w.characterIntroDelay} ms</span>
+                </label>
+                <label class="slider-row">${t('world.characterOutroDelay')}
+                    <input type="range" id="worldCharOutroDelay" min="0" max="5000" step="50" value="${w.characterOutroDelay}">
+                    <span id="worldCharOutroDelayValue">${w.characterOutroDelay} ms</span>
+                </label>
+            </div>
+        </div>
+        <div class="editor-row">
             <div class="row-head"><strong>${t('world.filters')}</strong></div>
             <div class="row-body" id="worldFiltersBody">
                 ${filtersMarkup(w.postFx || [])}
@@ -323,6 +341,34 @@ export function renderWorldPanel() {
 
     pane.querySelector('#worldToneMapping').onchange = (e) => {
         registry.updateWorld({ toneMapping: e.target.value });
+    };
+
+    pane.querySelector('#worldCharFadeEnabled').onchange = (e) => {
+        registry.updateWorld({ characterFadeEnabled: e.target.checked });
+        // Enable/disable the fade-duration slider — the delay sliders stay live regardless.
+        const dur = pane.querySelector('#worldCharFadeDuration');
+        if (dur) dur.disabled = !e.target.checked;
+    };
+    const charFadeDurInput = pane.querySelector('#worldCharFadeDuration');
+    const charFadeDurLabel = pane.querySelector('#worldCharFadeDurationValue');
+    charFadeDurInput.oninput = () => {
+        const v = parseInt(charFadeDurInput.value);
+        charFadeDurLabel.textContent = `${v} ms`;
+        registry.updateWorld({ characterFadeDuration: v });
+    };
+    const charIntroDelayInput = pane.querySelector('#worldCharIntroDelay');
+    const charIntroDelayLabel = pane.querySelector('#worldCharIntroDelayValue');
+    charIntroDelayInput.oninput = () => {
+        const v = parseInt(charIntroDelayInput.value);
+        charIntroDelayLabel.textContent = `${v} ms`;
+        registry.updateWorld({ characterIntroDelay: v });
+    };
+    const charOutroDelayInput = pane.querySelector('#worldCharOutroDelay');
+    const charOutroDelayLabel = pane.querySelector('#worldCharOutroDelayValue');
+    charOutroDelayInput.oninput = () => {
+        const v = parseInt(charOutroDelayInput.value);
+        charOutroDelayLabel.textContent = `${v} ms`;
+        registry.updateWorld({ characterOutroDelay: v });
     };
 
     const expInput = pane.querySelector('#worldToneExposure');

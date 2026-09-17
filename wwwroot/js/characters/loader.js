@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { TARGET_HEIGHT } from '../config.js';
-import { playIntroAnimation, stopIntroAnimation } from '../customization/introAnimation.js';
+import { playIntro, stopTransition } from './transitions.js';
 import { applyMaterialSettings } from '../customization/materials.js';
 
 export const state = {
@@ -16,12 +16,12 @@ export const state = {
 const modelCache = new Map();
 let preloadComplete = false;
 
-function disposeModel(characterData) {
+export function disposeCharacterData(characterData) {
     if (!characterData || !characterData.model) return;
 
     console.log('Disposing model resources:', characterData.name);
 
-    stopIntroAnimation(characterData.model);
+    stopTransition(characterData.model);
 
     if (characterData.mixer) {
         characterData.mixer.stopAllAction();
@@ -206,19 +206,19 @@ function processAndAddModel(gltf, scene, url, name, transform, type, index, opti
             requestAnimationFrame(() => {
                 if (type === 'survivor' && index >= 0 && index < 4) {
                     if (state.loadedCharacters.survivors[index]) {
-                        disposeModel(state.loadedCharacters.survivors[index]);
+                        disposeCharacterData(state.loadedCharacters.survivors[index]);
                         scene.remove(state.loadedCharacters.survivors[index].model);
                     }
                 } else if (type === 'hunter') {
                     if (state.loadedCharacters.hunter) {
-                        disposeModel(state.loadedCharacters.hunter);
+                        disposeCharacterData(state.loadedCharacters.hunter);
                         scene.remove(state.loadedCharacters.hunter.model);
                     }
                 }
 
                 scene.add(model);
 
-                playIntroAnimation(model);
+                playIntro(model);
 
                 const characterData = {
                     model: model,

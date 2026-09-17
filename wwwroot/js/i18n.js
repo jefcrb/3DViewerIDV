@@ -125,6 +125,11 @@ const translations = {
         'world.filterParam.thickness': 'Thickness',
         'world.filterParam.intensity': 'Intensity',
         'world.filterParam.offset': 'Offset',
+        'world.characterTransitions': 'Character transitions',
+        'world.characterFadeEnabled': 'Fade in/out',
+        'world.characterFadeDuration': 'Fade duration',
+        'world.characterIntroDelay': 'Intro delay',
+        'world.characterOutroDelay': 'Outro delay',
 
         // === standard triggers (raw ids stay in save data; these are display labels) ===
         'triggers.scene_loaded': 'Scene Loaded',
@@ -374,6 +379,11 @@ const translations = {
         'world.filterParam.thickness': '粗细',
         'world.filterParam.intensity': '强度',
         'world.filterParam.offset': '偏移',
+        'world.characterTransitions': '角色过渡',
+        'world.characterFadeEnabled': '淡入 / 淡出',
+        'world.characterFadeDuration': '淡入淡出时长',
+        'world.characterIntroDelay': '入场延迟',
+        'world.characterOutroDelay': '退场延迟',
 
         // === standard triggers ===
         'triggers.scene_loaded': '场景加载完成',
