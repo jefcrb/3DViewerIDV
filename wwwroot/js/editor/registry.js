@@ -73,7 +73,13 @@ const WORLD_DEFAULTS = {
     toneMappingExposure: 1.0,
     // Ordered post-processing filter stack; each: { type, enabled, ...params }.
     // Passes are applied top-to-bottom between the scene RenderPass and OutputPass.
-    postFx: []
+    postFx: [],
+    // Character intro/outro transitions. Delays are in ms; fadeDuration applies to both
+    // fade-in and fade-out when fade is enabled.
+    characterFadeEnabled: true,
+    characterFadeDuration: 400,
+    characterIntroDelay: 0,
+    characterOutroDelay: 0
 };
 
 function newId(prefix) {

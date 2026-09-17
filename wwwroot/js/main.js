@@ -26,6 +26,7 @@ import {
     state as sceneState
 } from './scene/loader.js';
 import { loadCustomScales, preloadAllModels, state as characterState } from './characters/loader.js';
+import { setTransitionConfig } from './characters/transitions.js';
 import { setupCharacterAPI, fireSceneLoaded } from './characters/api.js';
 import { loadSettings } from './storage/settingsStorage.js';
 import { registry } from './editor/registry.js';
@@ -110,8 +111,19 @@ function animate(currentTime) {
         registry.init(scene, liveCamera, renderer);
         // Prime and subscribe: rebuild the composer's filter passes any time world settings change.
         postFx.applyFilters(registry.world.postFx);
+        // Character transition config is read at mount/unmount time; push updates so the
+        // next intro/outro picks up the new values without stuttering an in-flight fade.
+        const pushTransitionCfg = (w) => setTransitionConfig({
+            fadeEnabled: w.characterFadeEnabled,
+            fadeDuration: w.characterFadeDuration,
+            introDelay: w.characterIntroDelay,
+            outroDelay: w.characterOutroDelay
+        });
+        pushTransitionCfg(registry.world);
         registry.addEventListener('world:update', (e) => {
-            postFx.applyFilters(e.detail?.spec?.postFx || []);
+            const w = e.detail?.spec || registry.world;
+            postFx.applyFilters(w.postFx || []);
+            pushTransitionCfg(w);
         });
 
         // Wire clipManager BEFORE hydrate so async asset .glb loads can register their clips
